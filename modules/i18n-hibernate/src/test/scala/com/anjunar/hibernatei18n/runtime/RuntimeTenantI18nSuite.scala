@@ -33,9 +33,6 @@ class RuntimeTenantI18nSuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeTenantPage].getName)
           .buildMetadata().buildSessionFactory()
         Using.resource(factory) { _ =>
-          val titleField = TranslationField.string[RuntimeTenantPage]("title", _.title)
-          val translations = HibernateI18n.install(factory, classOf[RuntimeTenantPage], _.id,
-            Seq(titleField))
           val idA = UUID.randomUUID()
           val idB = UUID.randomUUID()
           def inTenant[A](tenant: String, locale: String)(body: Session => A): A =
@@ -62,6 +59,8 @@ class RuntimeTenantI18nSuite extends munit.FunSuite:
             page.title = "Deutsch B"
             session.persist(page)
           }
+          val translations = HibernateI18n.translations(factory, classOf[RuntimeTenantPage])
+          val titleField = translations.field[String]("title")
           val detachedA = inTenant("tenant-a", "de") { session =>
             val page = session.find(classOf[RuntimeTenantPage], idA)
             assertEquals(page.tenantId, "tenant-a")
@@ -82,16 +81,24 @@ class RuntimeTenantI18nSuite extends munit.FunSuite:
           inTenant("tenant-a", "en") { session =>
             assertEquals(session.find(classOf[RuntimeTenantPage], idA).title, "English A")
             assert(session.find(classOf[RuntimeTenantPage], idB) == null)
-            assertEquals(session.createQuery(
-              "select p.title from RuntimeTenantPage p", classOf[String]
-            ).getResultList.asScala.toList, List("English A"))
+            assertEquals(
+              session.createQuery(
+                "select p.title from RuntimeTenantPage p",
+                classOf[String]
+              ).getResultList.asScala.toList,
+              List("English A")
+            )
           }
           inTenant("tenant-b", "en") { session =>
             assertEquals(session.find(classOf[RuntimeTenantPage], idB).title, "English B")
             assert(session.find(classOf[RuntimeTenantPage], idA) == null)
-            assertEquals(session.createQuery(
-              "select p.title from RuntimeTenantPage p", classOf[String]
-            ).getResultList.asScala.toList, List("English B"))
+            assertEquals(
+              session.createQuery(
+                "select p.title from RuntimeTenantPage p",
+                classOf[String]
+              ).getResultList.asScala.toList,
+              List("English B")
+            )
           }
           val draftAId = UUID.randomUUID()
           inTenant("tenant-a", "de") { session =>

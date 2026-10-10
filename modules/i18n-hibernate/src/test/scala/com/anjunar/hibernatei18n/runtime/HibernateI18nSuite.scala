@@ -28,8 +28,12 @@ class HibernateI18nSuite extends munit.FunSuite:
         Using.resource(new MetadataSources(registry)
           .addAnnotatedClassName(classOf[RuntimeSecondaryPage].getName)
           .buildMetadata().buildSessionFactory()) { factory =>
-          HibernateI18n.install(factory, classOf[RuntimeSecondaryPage], _.id,
-            Seq(TranslationField.string[RuntimeSecondaryPage]("title", _ => "Wrong title")))
+          HibernateI18n.install(
+            factory,
+            classOf[RuntimeSecondaryPage],
+            _.id,
+            Seq(TranslationField.string[RuntimeSecondaryPage]("title", _ => "Wrong title"))
+          )
           Using.resource(HibernateI18n.openSession(factory, "de")) { session =>
             val transaction = session.beginTransaction()
             try
@@ -74,19 +78,21 @@ class HibernateI18nSuite extends munit.FunSuite:
         val metadata = new MetadataSources(registry)
           .addAnnotatedClassName(classOf[RuntimePage].getName)
           .addAnnotatedClassName(classOf[RuntimeSecondaryPage].getName).buildMetadata()
-        assertEquals(metadata.getEntityBinding(classOf[RuntimePage].getName)
-          .getTable.getColumn(new org.hibernate.mapping.Column("title")), null)
+        assertEquals(
+          metadata.getEntityBinding(classOf[RuntimePage].getName)
+            .getTable.getColumn(new org.hibernate.mapping.Column("title")),
+          null
+        )
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          intercept[IllegalStateException](HibernateI18n.openSession(factory, "de"))
-          val titleField = TranslationField.string[RuntimePage]("title", _.title)
-          val contentField = TranslationField.converted[RuntimePage, RuntimeMarkdown](
-            "content", _.content, _.source, RuntimeMarkdown.apply)
-          val translations = HibernateI18n.install(factory, classOf[RuntimePage], _.id,
-            Seq(titleField, contentField))
-          val incomplete = intercept[IllegalStateException](HibernateI18n.openSession(factory, "de"))
-          assert(incomplete.getMessage.contains(classOf[RuntimeSecondaryPage].getName))
-          HibernateI18n.install(factory, classOf[RuntimeSecondaryPage], _.id,
-            Seq(TranslationField.string[RuntimeSecondaryPage]("title", _.title)))
+          val translations = HibernateI18n.translations(factory, classOf[RuntimePage])
+          val titleField = translations.field[String]("title")
+          val contentField = translations.field[RuntimeMarkdown]("content")
+          assertEquals(translations.fieldNames.toSet, Set("title", "content"))
+          assert(HibernateI18n.translations(factory, classOf[RuntimePage]) eq translations)
+          intercept[IllegalArgumentException](translations.field[String]("id"))
+          intercept[IllegalArgumentException](translations.field[String]("content"))
+          intercept[IllegalArgumentException](translations.field[AnyRef]("title"))
+          intercept[IllegalArgumentException](HibernateI18n.translations(factory, classOf[String]))
           val id = UUID.randomUUID()
           def inLocale[A](locale: String)(body: org.hibernate.Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
@@ -106,18 +112,44 @@ class HibernateI18nSuite extends munit.FunSuite:
             page.title = "Hallo"
             page.content = RuntimeMarkdown("**Deutsch**")
             session.persist(page)
+            val secondary = new RuntimeSecondaryPage()
+            secondary.id = UUID.randomUUID()
+            secondary.title = "Automatically registered"
+            session.persist(secondary)
           }
           inLocale("en") { session =>
             val page = session.find(classOf[RuntimePage], id)
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, RuntimeMarkdown("**Deutsch**"))
             page.title = "Hello"
-            assertEquals(session.createQuery(
-              "select p.title from RuntimePage p where p.id = :id", classOf[String]
-            ).setParameter("id", id).getSingleResult, "Hello")
+            assertEquals(
+              session.createQuery(
+                "select p.title from RuntimePage p where p.id = :id",
+                classOf[String]
+              ).setParameter("id", id).getSingleResult,
+              "Hello"
+            )
+          }
+          inLocale("de") { session =>
+            val page = session.getReference(classOf[RuntimePage], id)
+            assert(!org.hibernate.Hibernate.isInitialized(page))
+            assertEquals(titleField.read(page), "Hallo")
+            assertEquals(contentField.read(page), RuntimeMarkdown("**Deutsch**"))
+          }
+          inLocale("de") { session =>
+            val page = session.getReference(classOf[RuntimePage], id)
+            assert(!org.hibernate.Hibernate.isInitialized(page))
+            translations.setActive(session, page, "title", "Über Proxy")
           }
           inLocale("de") { session =>
             val page = session.find(classOf[RuntimePage], id)
+            assertEquals(page.title, "Über Proxy")
+            page.title = "Hallo"
+          }
+          inLocale("de") { session =>
+            val page = session.find(classOf[RuntimePage], id)
+            HibernateI18n.install(factory) // Repeated setup must preserve the field handles and listener state.
+            assert(HibernateI18n.translations(factory, classOf[RuntimePage]) eq translations)
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, RuntimeMarkdown("**Deutsch**"))
           }
@@ -134,11 +166,14 @@ class HibernateI18nSuite extends munit.FunSuite:
             val page = session.find(classOf[RuntimePage], id)
             assertEquals(translations.get(session, page, titleField, "en"), None)
             assertEquals(translations.get(session, page, contentField, "en"), None)
-            translations.set(session, page, titleField, "en", "Hello editor")
-            translations.set(session, page, contentField, "en", RuntimeMarkdown("**English**"))
-            assertEquals(translations.get(session, page, titleField, "en"), Some("Hello editor"))
-            assertEquals(translations.get(session, page, contentField, "en"),
-              Some(RuntimeMarkdown("**English**")))
+            intercept[IllegalArgumentException](translations.set[AnyRef](session, page, "title", "en", new Object))
+            translations.set(session, page, "title", "en", "Hello editor")
+            translations.set(session, page, "content", "en", RuntimeMarkdown("**English**"))
+            assertEquals(translations.get[String](session, page, "title", "en"), Some("Hello editor"))
+            assertEquals(
+              translations.get[RuntimeMarkdown](session, page, "content", "en"),
+              Some(RuntimeMarkdown("**English**"))
+            )
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, RuntimeMarkdown("**Deutsch**"))
             intercept[org.hibernate.HibernateException] {
@@ -152,7 +187,7 @@ class HibernateI18nSuite extends munit.FunSuite:
           }
           inLocale("de") { session =>
             val page = session.find(classOf[RuntimePage], id)
-            translations.set(session, page, titleField, "en", null)
+            translations.set(session, page, "title", "en", null)
             assertEquals(translations.get(session, page, titleField, "en"), None)
             assertEquals(page.title, "Hallo")
           }
@@ -184,10 +219,14 @@ class HibernateI18nSuite extends munit.FunSuite:
               try
                 val firstPage = first.find(classOf[RuntimePage], id)
                 val secondPage = second.find(classOf[RuntimePage], id)
-                assertEquals(translations.get(first, firstPage, titleField, "en"),
-                  Some("English baseline"))
-                assertEquals(translations.get(second, secondPage, titleField, "en"),
-                  Some("English baseline"))
+                assertEquals(
+                  translations.get(first, firstPage, titleField, "en"),
+                  Some("English baseline")
+                )
+                assertEquals(
+                  translations.get(second, secondPage, titleField, "en"),
+                  Some("English baseline")
+                )
                 translations.set(first, firstPage, titleField, "en", "Editor one")
                 translations.set(second, secondPage, titleField, "en", "Editor two")
                 firstTransaction.commit()
@@ -219,10 +258,14 @@ class HibernateI18nSuite extends munit.FunSuite:
           }
           inLocale("de") { session =>
             val page = session.find(classOf[RuntimePage], id)
-            assertEquals(translations.get(session, page, titleField, "en"),
-              Some("English independent"))
-            assertEquals(translations.get(session, page, titleField, "fr"),
-              Some("Français indépendant"))
+            assertEquals(
+              translations.get(session, page, titleField, "en"),
+              Some("English independent")
+            )
+            assertEquals(
+              translations.get(session, page, titleField, "fr"),
+              Some("Français indépendant")
+            )
             assertEquals(page.title, "Hallo")
           }
           Using.resource(HibernateI18n.openSession(factory, "de")) { editor =>
@@ -232,8 +275,10 @@ class HibernateI18nSuite extends munit.FunSuite:
               try
                 val editorPage = editor.find(classOf[RuntimePage], id)
                 val domainPage = domain.find(classOf[RuntimePage], id)
-                assertEquals(translations.get(editor, editorPage, titleField, "en"),
-                  Some("English independent"))
+                assertEquals(
+                  translations.get(editor, editorPage, titleField, "en"),
+                  Some("English independent")
+                )
                 translations.set(editor, editorPage, titleField, "en", "Editor wins")
                 domainPage.title = "Domain loses"
                 editorTransaction.commit()
@@ -251,8 +296,10 @@ class HibernateI18nSuite extends munit.FunSuite:
           inLocale("de") { session =>
             val page = session.find(classOf[RuntimePage], id)
             translations.set(session, page, titleField, "fr-CA", "Temporaire")
-            assertEquals(translations.get(session, page, titleField, "fr-CA"),
-              Some("Temporaire"))
+            assertEquals(
+              translations.get(session, page, titleField, "fr-CA"),
+              Some("Temporaire")
+            )
             translations.set(session, page, titleField, "fr-CA", null)
             assertEquals(translations.get(session, page, titleField, "fr-CA"), None)
           }
@@ -273,22 +320,30 @@ class HibernateI18nSuite extends munit.FunSuite:
             secondary.title = "Second page"
           }
           inLocale("de") { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
-              "Zweite Seite")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
+              "Zweite Seite"
+            )
           }
           inLocale("en") { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
-              "Second page")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
+              "Second page"
+            )
           }
           inLocale("de") { session =>
             session.find(classOf[RuntimePage], id).title = "Hauptseite gemeinsam"
             session.find(classOf[RuntimeSecondaryPage], secondaryId).title = "Zweite gemeinsam"
           }
           inLocale("de") { session =>
-            assertEquals(session.find(classOf[RuntimePage], id).title,
-              "Hauptseite gemeinsam")
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
-              "Zweite gemeinsam")
+            assertEquals(
+              session.find(classOf[RuntimePage], id).title,
+              "Hauptseite gemeinsam"
+            )
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], secondaryId).title,
+              "Zweite gemeinsam"
+            )
           }
           val fallbackId = UUID.randomUUID()
           inLocale("en") { session =>
@@ -302,15 +357,21 @@ class HibernateI18nSuite extends munit.FunSuite:
             assertEquals(page.title, "English fallback before edit")
             translations.set(session, page, titleField, "en", "English fallback after edit")
             assertEquals(page.title, "English fallback before edit")
-            assertEquals(session.createQuery(
-              "select p.title from RuntimePage p where p.id = :id", classOf[String]
-            ).setParameter("id", fallbackId).getSingleResult, "English fallback after edit")
+            assertEquals(
+              session.createQuery(
+                "select p.title from RuntimePage p where p.id = :id",
+                classOf[String]
+              ).setParameter("id", fallbackId).getSingleResult,
+              "English fallback after edit"
+            )
             assert(session.find(classOf[RuntimePage], fallbackId) eq page)
             assertEquals(page.title, "English fallback before edit")
           }
           inLocale("de") { session =>
-            assertEquals(session.find(classOf[RuntimePage], fallbackId).title,
-              "English fallback after edit")
+            assertEquals(
+              session.find(classOf[RuntimePage], fallbackId).title,
+              "English fallback after edit"
+            )
           }
         }
       finally StandardServiceRegistryBuilder.destroy(registry)

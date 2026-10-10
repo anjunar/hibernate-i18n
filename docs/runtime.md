@@ -1,9 +1,10 @@
-# Hibernate I18n 1.0.0 runtime
+# Hibernate I18n 1.1.0 development runtime
 
-The public coordinate is `com.anjunar:hibernate-i18n:1.0.0`, without a Scala
+The development coordinate is `com.anjunar:hibernate-i18n:1.1.0-SNAPSHOT`, without a Scala
 suffix. Use the same runtime for application and production bootstrap; a separate
 Development artifact is no longer needed. The supported ORM version is
 Hibernate 7.4.10.Final, with PostgreSQL and JDK 17 or newer.
+The automatic registration API described here is not available in the published 1.0.0 release.
 
 ## Metadata and schema startup
 
@@ -19,21 +20,34 @@ Give the concrete localized entity and every translated member stable eight-digi
 after metadata build and before SessionFactory creation. The runtime provides the
 generated rows' schema IDs and brings schema-integration 1.2.0 transitively.
 
-Install each localized entity's field bridge once after creating the factory and
-before opening Sessions:
+`HibernateI18n.openSession` registers every mapped `@Localized` entity before opening
+the first localized Session. Identifiers, field/getter access and conversion functions
+come from the finalized Hibernate mapping. Applications maintain only the annotations.
+An application that wants eager initialization can call `HibernateI18n.install(factory)`.
+
+Exact-locale editors obtain their handle without listing fields:
 
 ```scala
-import com.anjunar.hibernatei18n.runtime.{HibernateI18n, TranslationField}
+import com.anjunar.hibernatei18n.runtime.HibernateI18n
 
-val titleField = TranslationField.string[Page]("title", _.title)
-val translations = HibernateI18n.install(
-  factory, classOf[Page], _.id, Seq(titleField))
+val translations = HibernateI18n.translations(factory, classOf[Page])
+val titleField = translations.field[String]("title")
 ```
 
-The field list must match every mapped translated member. A reader wired to the
-wrong property fails at flush rather than writing the wrong value. A factory
-listener dispatches each flush to the installed entity bridges. Missing bridges
-are rejected before opening a localized Session.
+`fieldNames` exposes the annotation-derived inventory for generic editors and seeds.
+`field[V](name)` checks the requested domain type and rejects untranslated properties.
+Registration and handle lookup are idempotent. One factory listener dispatches each
+flush to its entity bridges, and closing the factory removes its runtime registration.
+Generic forms and multilingual seeds can use `setActive(session, entity, name, value)`
+to change an annotated domain property through Hibernate's configured setter. This
+needs no parallel list of setter functions. Ordinary domain code still assigns its
+typed property directly. `setActive` uses the same managed-entity and field-type checks
+as the editor; the resulting domain change is synchronized during normal flush.
+
+The 1.0.0 `install(factory, entityClass, idOf, fields)` API remains available for
+compatibility. Explicit registrations must still match every annotated field and
+are checked for miswired readers at flush. Do not combine explicit and automatic
+registration of the same entity; use the returned or automatically obtained handle.
 
 Close the SessionFactory and destroy its StandardServiceRegistry during shutdown.
 A plain Hibernate registry without the I18n bootstrap rejects annotation mappings
@@ -42,15 +56,17 @@ before they can put translated values in the parent table.
 ## Typed fields and naming
 
 String members retain their ordinary type. A converted value must map to a String
-database value. Match its field descriptor to the JPA converter in both directions:
+database value. The runtime uses Hibernate's configured JPA converter instance in
+both directions:
 
 ```scala
-val contentField = TranslationField.converted[Page, Markdown](
-  "content", _.content, _.source, Markdown.apply)
+@Translation @Convert(converter = classOf[MarkdownConverter])
+var content: Markdown = uninitialized
+
+val contentField = translations.field[Markdown]("content")
 ```
 
-Install this field together with the entity's other translated members. Nulls are
-handled by the field descriptor before conversion. `@Translation(column = ...)`
+No separate codec or reader is needed. Nulls are handled before conversion. `@Translation(column = ...)`
 selects a translation column, with the physical naming strategy applied afterwards.
 `@Column` on translated attributes is rejected. Physical collisions, including with
 the row-version column, are detected during metadata build.
@@ -60,7 +76,7 @@ ID is a UUID and database values are Strings. Column identifiers must be simple;
 table names may contain `#` and are quoted when needed. ID, version and String
 tenant fields can be inherited from mapped superclasses. Translated members of a
 mapped superclass may feed one entity mapping per factory. In a supported
-single-table hierarchy, the owning localized entity is installed once; subclasses
+single-table hierarchy, the owning localized entity is registered once; subclasses
 inherit that bridge. Do not add a second localized owner for the same field.
 
 ## Locale and queries
@@ -83,13 +99,13 @@ mode. Use transactions, roll back errors and always close Sessions.
 
 ## Exact-locale editor
 
-The installed handle's `get` and `set` use a managed entity from that factory and
-the exact field instance passed to installation:
+The handle's `get` and `set` use a managed entity from that factory and a field
+obtained from that handle. Named access resolves the same annotation-derived field:
 
 ```scala
 val english: Option[Markdown] =
-  translations.get(session, page, contentField, "en")
-translations.set(session, page, contentField, "en", Markdown("**English**"))
+  translations.get[Markdown](session, page, "content", "en")
+translations.set(session, page, "content", "en", Markdown("**English**"))
 ```
 
 `get` reads only the exact override, with no fallback. `set` accepts inactive

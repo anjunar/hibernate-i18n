@@ -3,7 +3,7 @@ package com.anjunar.hibernatei18n.runtime
 import com.anjunar.hibernatei18n.annotation.Localized
 import com.anjunar.hibernatei18n.boot.{LocalizedEntityMembers, TranslationMappingXml, LocalizedBootstrapGuard}
 import com.anjunar.hibernatei18n.runtime.SessionContentLocale
-import org.hibernate.{HibernateException, Session, SessionFactory}
+import org.hibernate.{HibernateException, Session, SessionFactory, SessionFactoryObserver}
 import org.hibernate.boot.registry.{BootstrapServiceRegistryBuilder, StandardServiceRegistryBuilder}
 import org.hibernate.boot.registry.classloading.internal.ClassLoaderServiceImpl
 import org.hibernate.boot.spi.{AdditionalMappingContributor, MetadataSourcesContributor}
@@ -20,7 +20,8 @@ import scala.jdk.CollectionConverters.*
 object HibernateI18n:
   private final class Registration(
     val hub: TranslationListenerHub,
-    var installed: Set[Class[?]]
+    var handles: Map[Class[?], Translations[?]],
+    var complete: Boolean = false
   )
 
   private val registrations = new WeakHashMap[SessionFactory, Registration]()
@@ -45,6 +46,22 @@ object HibernateI18n:
     val bootstrap = new BootstrapServiceRegistryBuilder().applyClassLoaderService(classLoading).build()
     new StandardServiceRegistryBuilder(bootstrap)
 
+  /** Eagerly register every mapped @Localized entity using Hibernate's property access and converters. */
+  def install(factory: SessionFactory): Unit = synchronized {
+    val registration = registrations.get(factory)
+    if registration == null || !registration.complete then
+      localizedEntities(factory).toSeq.sortBy(_.getName).foreach(entity => translations(factory, entity))
+      Option(registrations.get(factory)).foreach(_.complete = true)
+  }
+
+  /** Obtain an editor handle without declaring identifiers, readers or conversion functions again. */
+  def translations[P <: AnyRef](factory: SessionFactory, entityClass: Class[P]): Translations[P] = synchronized {
+    Option(registrations.get(factory)).flatMap(_.handles.get(entityClass)) match
+      case Some(handle) => handle.asInstanceOf[Translations[P]]
+      case None         => MappedTranslations.install(factory, entityClass)
+  }
+
+  /** Compatibility API for applications that explicitly supply their translation bridge. */
   def install[P <: AnyRef](
     factory: SessionFactory,
     entityClass: Class[P],
@@ -54,17 +71,19 @@ object HibernateI18n:
     if !localizedEntities(factory).contains(entityClass) then
       throw new IllegalArgumentException(s"Not a mapped @Localized entity: ${entityClass.getName}")
     val existing = registrations.get(factory)
-    if existing != null && existing.installed.contains(entityClass) then
+    if existing != null && existing.handles.contains(entityClass) then
       throw new IllegalStateException(s"Runtime listeners are already installed for ${entityClass.getName}")
     val expected = LocalizedEntityMembers.inspect(entityClass).translations.map(_.name).toSet
     if fields.map(_.name).toSet != expected || fields.map(_.name).distinct.size != fields.size then
       throw new IllegalArgumentException(s"Runtime fields must match @Translation members of ${entityClass.getName}")
     val translationEntity = TranslationMappingXml.translationEntityName(entityClass)
     if factory.unwrap(classOf[SessionFactoryImplementor]).getMappingMetamodel
-        .getEntityDescriptor(translationEntity) == null then
+        .getEntityDescriptor(translationEntity) == null
+    then
       throw new HibernateException(s"Missing generated translation entity: $translationEntity")
     val synchronizer = new TranslationSynchronizer(entityClass, translationEntity, idOf, fields)
-    val registration = if existing != null then existing else
+    val registration = if existing != null then existing
+    else
       val hub = new TranslationListenerHub()
       val listeners = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
         .getService(classOf[EventListenerRegistry])
@@ -77,13 +96,21 @@ object HibernateI18n:
       listeners.prependListeners(EventType.REPLICATE, hub)
       listeners.appendListeners(EventType.POST_LOAD, hub)
       listeners.appendListeners(EventType.PRE_DELETE, hub)
-      val created = new Registration(hub, Set.empty)
+      val created = new Registration(hub, Map.empty)
       registrations.put(factory, created)
+      factory.unwrap(classOf[SessionFactoryImplementor]).addObserver(new SessionFactoryObserver {
+        override def sessionFactoryClosed(closed: SessionFactory): Unit = HibernateI18n.synchronized {
+          registrations.remove(closed)
+        }
+      })
       created
-    registration.hub.add(synchronizer,
-      new TranslationCascadeEvictor(entityClass, translationEntity, idOf))
-    registration.installed += entityClass
-    new Translations(factory, entityClass, translationEntity, idOf, fields)
+    registration.hub.add(
+      synchronizer,
+      new TranslationCascadeEvictor(entityClass, translationEntity, idOf)
+    )
+    val handle = new Translations(factory, entityClass, translationEntity, idOf, fields)
+    registration.handles += entityClass -> handle
+    handle
   }
 
   def openSession(factory: SessionFactory, locale: String): Session =
@@ -98,14 +125,7 @@ object HibernateI18n:
     locale: String,
     tenantId: Option[String]
   ): Session =
-    synchronized {
-      val installed = Option(registrations.get(factory)).map(_.installed).getOrElse(Set.empty)
-      if installed.isEmpty then
-        throw new IllegalStateException("Install translation listeners before opening a localized Session")
-      val missing = localizedEntities(factory).diff(installed)
-      if missing.nonEmpty then
-        throw new IllegalStateException(s"Missing translation listeners for: ${missing.toSeq.map(_.getName).sorted.mkString(", ")}")
-    }
+    install(factory)
     val options = factory.withOptions().statementInspector(new LocaleInspector(locale))
     tenantId.foreach(value => options.tenantIdentifier(value.asInstanceOf[Object]))
     val session = options.openSession()
@@ -116,4 +136,3 @@ object HibernateI18n:
       case error: Throwable =>
         session.close()
         throw error
-

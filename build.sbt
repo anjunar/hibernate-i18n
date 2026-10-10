@@ -1,7 +1,7 @@
 import sbt.url
 
 // sbt 2 applies bare settings to every subproject, including the root.
-version := "1.0.0"
+version := "1.1.0-SNAPSHOT"
 organization := "com.anjunar"
 organizationName := "Anjunar"
 organizationHomepage := Some(url("https://github.com/anjunar"))
@@ -96,6 +96,8 @@ lazy val i18nHibernate = (project in file("modules/i18n-hibernate"))
           sys.error(s"Internal Session locale binding missing from $jar")
         if (archive.getEntry("com/anjunar/hibernatei18n/runtime/ManagedTranslationRows$.class") == null)
           sys.error(s"Internal managed translation-row lookup missing from $jar")
+        if (archive.getEntry("com/anjunar/hibernatei18n/runtime/MappedTranslations$.class") == null)
+          sys.error(s"Annotation-derived runtime registration missing from $jar")
         List("HibernateI18n$", "TranslationField$", "Translations", "TranslationSchemaUpgrade$").foreach { api =>
           if (archive.getEntry(s"com/anjunar/hibernatei18n/runtime/$api.class") == null)
             sys.error(s"Missing production translation API $api in $jar")

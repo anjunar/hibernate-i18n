@@ -35,22 +35,24 @@ class RuntimeInheritanceI18nSuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeTextField].getName)
           .addAnnotatedClassName(classOf[RuntimeMarkdownField].getName)
           .buildMetadata()
-        assertEquals(metadata.getEntityBinding(classOf[RuntimeInheritedIdentityPage].getName)
-          .getTable.getColumn(new org.hibernate.mapping.Column("title")), null)
-        assertEquals(metadata.getEntityBinding(classOf[RuntimeInheritedTranslationPage].getName)
-          .getTable.getColumn(new org.hibernate.mapping.Column("label")), null)
-        assertEquals(metadata.getEntityBinding(classOf[TranslationFieldRoot].getName)
-          .getTable.getColumn(new org.hibernate.mapping.Column("value")), null)
+        assertEquals(
+          metadata.getEntityBinding(classOf[RuntimeInheritedIdentityPage].getName)
+            .getTable.getColumn(new org.hibernate.mapping.Column("title")),
+          null
+        )
+        assertEquals(
+          metadata.getEntityBinding(classOf[RuntimeInheritedTranslationPage].getName)
+            .getTable.getColumn(new org.hibernate.mapping.Column("label")),
+          null
+        )
+        assertEquals(
+          metadata.getEntityBinding(classOf[TranslationFieldRoot].getName)
+            .getTable.getColumn(new org.hibernate.mapping.Column("value")),
+          null
+        )
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val titleField = TranslationField.string[RuntimeInheritedIdentityPage]("title", _.title)
-          val titleTranslations = HibernateI18n.install(factory,
-            classOf[RuntimeInheritedIdentityPage], _.id, Seq(titleField))
-          val valueField = TranslationField.string[RuntimeTextField]("value", _.value)
-          HibernateI18n.install(factory, classOf[RuntimeTextField], _.id, Seq(valueField))
-          val labelField = TranslationField.string[RuntimeInheritedTranslationPage]("label", _.label)
-          val captionField = TranslationField.string[RuntimeInheritedTranslationPage]("caption", _.caption)
-          HibernateI18n.install(factory, classOf[RuntimeInheritedTranslationPage],
-            _.id, Seq(labelField, captionField))
+          val titleTranslations = HibernateI18n.translations(factory, classOf[RuntimeInheritedIdentityPage])
+          val titleField = titleTranslations.field[String]("title")
           val page = new RuntimeInheritedIdentityPage()
           val inherited = new RuntimeInheritedTranslationPage()
           val markdown = new RuntimeMarkdownField()
@@ -80,20 +82,34 @@ class RuntimeInheritanceI18nSuite extends munit.FunSuite:
             val loaded = session.find(classOf[RuntimeInheritedIdentityPage], page.id)
             assertEquals(loaded.title, "Deutsch")
             assertEquals(loaded.tenant, "tenant-a")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).label, "Geerbter Wert")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).caption, "Eigener Wert")
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).label,
+              "Geerbter Wert"
+            )
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).caption,
+              "Eigener Wert"
+            )
             val markdownLoaded = session.find(classOf[RuntimeMarkdownField], markdown.id)
             assertEquals(markdownLoaded.value, "**Deutsch**")
             assertEquals(markdownLoaded.tenant, "tenant-a")
             titleTranslations.set(session, loaded, titleField, "en", "English")
           }
           inLocale("en") { session =>
-            assertEquals(session.find(classOf[RuntimeInheritedIdentityPage], page.id).title,
-              "English")
-            val inheritedLoaded = session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id)
+            assertEquals(
+              session.find(classOf[RuntimeInheritedIdentityPage], page.id).title,
+              "English"
+            )
+            val inheritedLoaded = session.find(
+              classOf[RuntimeInheritedTranslationPage],
+              inherited.id
+            )
             assertEquals(inheritedLoaded.label, "Geerbter Wert")
             assertEquals(inheritedLoaded.caption, "Eigener Wert")
             inheritedLoaded.label = "Inherited value"
@@ -102,22 +118,48 @@ class RuntimeInheritanceI18nSuite extends munit.FunSuite:
             loaded.value = "**English**"
           }
           inLocale("de") { session =>
-            assertEquals(session.find(classOf[RuntimeInheritedIdentityPage], page.id).title,
-              "Deutsch")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).label, "Geerbter Wert")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).caption, "Eigener Wert")
-            assertEquals(session.find(classOf[RuntimeMarkdownField], markdown.id).value,
-              "**Deutsch**")
+            assertEquals(
+              session.find(classOf[RuntimeInheritedIdentityPage], page.id).title,
+              "Deutsch"
+            )
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).label,
+              "Geerbter Wert"
+            )
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).caption,
+              "Eigener Wert"
+            )
+            assertEquals(
+              session.find(classOf[RuntimeMarkdownField], markdown.id).value,
+              "**Deutsch**"
+            )
           }
           inLocale("en") { session =>
-            assertEquals(session.find(classOf[RuntimeMarkdownField], markdown.id).value,
-              "**English**")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).label, "Inherited value")
-            assertEquals(session.find(classOf[RuntimeInheritedTranslationPage],
-              inherited.id).caption, "Eigener Wert")
+            assertEquals(
+              session.find(classOf[RuntimeMarkdownField], markdown.id).value,
+              "**English**"
+            )
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).label,
+              "Inherited value"
+            )
+            assertEquals(
+              session.find(
+                classOf[RuntimeInheritedTranslationPage],
+                inherited.id
+              ).caption,
+              "Eigener Wert"
+            )
           }
         }
       finally StandardServiceRegistryBuilder.destroy(registry)

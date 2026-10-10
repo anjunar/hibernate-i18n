@@ -23,9 +23,8 @@ object RuntimeConsumer:
         .addAnnotatedClass(classOf[ExamplePage])
         .buildMetadata().buildSessionFactory()
       try
-        val titleField = TranslationField.string[ExamplePage]("title", _.title)
-        val translations = HibernateI18n.install(factory, classOf[ExamplePage], _.id,
-          Seq(titleField))
+        val translations = HibernateI18n.translations(factory, classOf[ExamplePage])
+        val titleField = translations.field[String]("title")
         body(factory, translations, titleField)
       finally factory.close()
     finally StandardServiceRegistryBuilder.destroy(registry)

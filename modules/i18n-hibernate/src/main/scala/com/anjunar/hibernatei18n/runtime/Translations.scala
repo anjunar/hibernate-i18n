@@ -1,11 +1,14 @@
 package com.anjunar.hibernatei18n.runtime
 
 import com.anjunar.hibernatei18n.runtime.{ManagedTranslationRows, SessionContentLocale}
-import org.hibernate.{HibernateException, Session, SessionFactory}
+import org.hibernate.{Hibernate, HibernateException, Session, SessionFactory}
 import org.hibernate.event.spi.EventSource
+import org.hibernate.engine.spi.SessionFactoryImplementor
+import org.hibernate.internal.util.`type`.PrimitiveWrappers
 
 import java.util.{HashMap, UUID}
 import scala.jdk.CollectionConverters.*
+import scala.reflect.ClassTag
 
 /** Exact-locale editor access that leaves the managed domain entity state untouched. */
 final class Translations[P <: AnyRef] private[runtime] (
@@ -15,6 +18,52 @@ final class Translations[P <: AnyRef] private[runtime] (
   idOf: P => UUID,
   fields: Seq[TranslationField[P, ?]]
 ):
+  /** Names come from @Translation; applications do not maintain a second field inventory. */
+  def fieldNames: Seq[String] = fields.map(_.name)
+
+  private def namedField(name: String): TranslationField[P, ?] =
+    fields.find(_.name == name).getOrElse(
+      throw new IllegalArgumentException(s"No @Translation property ${entityClass.getName}.$name")
+    )
+
+  def field[V: ClassTag](name: String): TranslationField[P, V] =
+    val selected = namedField(name)
+    val actualType = factory.unwrap(classOf[SessionFactoryImplementor]).getMappingMetamodel
+      .getEntityDescriptor(entityClass).getPropertyType(name).getReturnedClass
+    val requestedType = summon[ClassTag[V]].runtimeClass
+    require(
+      PrimitiveWrappers.canonicalize(requestedType) == PrimitiveWrappers.canonicalize(actualType),
+      s"Translated property ${entityClass.getName}.$name has type ${actualType.getName}, not ${requestedType.getName}"
+    )
+    selected.asInstanceOf[TranslationField[P, V]]
+
+  def get[V: ClassTag](session: Session, page: P, name: String, locale: String): Option[V] =
+    get(session, page, field[V](name), locale)
+
+  private def fieldForValue[V](name: String, value: V): TranslationField[P, V] =
+    val selected = namedField(name)
+    val actualType = factory.unwrap(classOf[SessionFactoryImplementor]).getMappingMetamodel
+      .getEntityDescriptor(entityClass).getPropertyType(name).getReturnedClass
+    require(
+      value == null || PrimitiveWrappers.isInstance(actualType, value),
+      s"Translated property ${entityClass.getName}.$name requires a ${actualType.getName} value"
+    )
+    selected.asInstanceOf[TranslationField[P, V]]
+
+  def set[V](session: Session, page: P, name: String, locale: String, value: V): Unit =
+    set(session, page, fieldForValue(name, value), locale, value)
+
+  /** Generic forms and seeds can edit the active domain property without maintaining setter functions. */
+  def setActive[V](session: Session, page: P, name: String, value: V): Unit =
+    checkedEntity(session, page)
+    fieldForValue(name, value)
+    val persister = factory.unwrap(classOf[SessionFactoryImplementor]).getMappingMetamodel
+      .getEntityDescriptor(entityClass)
+    persister.findAttributeMapping(name).getPropertyAccess.getSetter.set(
+      Hibernate.unproxy(page),
+      value.asInstanceOf[AnyRef]
+    )
+
   def get[V](session: Session, page: P, field: TranslationField[P, V], locale: String): Option[V] =
     val source = checkedSession(session, page, field, locale)
     val row = ManagedTranslationRows.find(source, translationEntity, rowId(idOf(page), locale))
@@ -81,9 +130,14 @@ final class Translations[P <: AnyRef] private[runtime] (
   private def checkedEntity(session: Session, page: P): EventSource =
     val source = session.asInstanceOf[EventSource]
     SessionContentLocale.required(source)
-    require(session.getSessionFactory eq factory, "Translation access requires the SessionFactory used for installation")
-    require(page != null && entityClass.isInstance(page) && session.contains(page),
-      "Translation access requires a managed entity of the installed type")
+    require(
+      session.getSessionFactory eq factory,
+      "Translation access requires the SessionFactory used for installation"
+    )
+    require(
+      page != null && entityClass.isInstance(page) && session.contains(page),
+      "Translation access requires a managed entity of the installed type"
+    )
     if idOf(page) == null then throw new HibernateException("Translation access requires a persistent identifier")
     source
 

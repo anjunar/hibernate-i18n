@@ -30,18 +30,21 @@ class RuntimeGetterI18nSuite extends munit.FunSuite:
         val metadata = new MetadataSources(registry)
           .addAnnotatedClassName(classOf[RuntimeGetterPage].getName)
           .buildMetadata()
-        assertEquals(metadata.getEntityBinding(classOf[RuntimeGetterPage].getName)
-          .getTable.getColumn(new Column("title")), null)
+        assertEquals(
+          metadata.getEntityBinding(classOf[RuntimeGetterPage].getName)
+            .getTable.getColumn(new Column("title")),
+          null
+        )
         assert(metadata.getEntityBinding(
           com.anjunar.hibernatei18n.boot.TranslationMappingXml.translationEntityName(
-            classOf[RuntimeGetterPage]))
+            classOf[RuntimeGetterPage]
+          )
+        )
           .getTable.getColumn(new Column("displayTitle")) != null)
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val titleField = TranslationField.string[RuntimeGetterPage]("title", _.getTitle)
-          val contentField = TranslationField.converted[RuntimeGetterPage, RuntimeMarkdown](
-            "content", _.getContent, _.source, RuntimeMarkdown.apply)
-          val translations = HibernateI18n.install(factory, classOf[RuntimeGetterPage],
-            _.getId, Seq(titleField, contentField))
+          val translations = HibernateI18n.translations(factory, classOf[RuntimeGetterPage])
+          val titleField = translations.field[String]("title")
+          val contentField = translations.field[RuntimeMarkdown]("content")
           val id = UUID.randomUUID()
           def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
@@ -66,10 +69,20 @@ class RuntimeGetterI18nSuite extends munit.FunSuite:
             val page = session.find(classOf[RuntimeGetterPage], id)
             assertEquals(page.getTitle, "Titel")
             assertEquals(page.getContent, RuntimeMarkdown("**Deutsch**"))
-            page.setTitle("Title")
-            assertEquals(session.createQuery(
-              "select p.title from RuntimeGetterPage p where p.id = :id", classOf[String]
-            ).setParameter("id", id).getSingleResult, "Title")
+            translations.setActive(session, page, "title", "Title")
+            assertEquals(page.getTitle, "Title")
+            translations.setActive(session, page, "content", null)
+            assertEquals(page.getContent, null)
+            translations.setActive(session, page, "content", RuntimeMarkdown("**Deutsch**"))
+            intercept[IllegalArgumentException](translations.setActive(session, page, "id", UUID.randomUUID()))
+            intercept[IllegalArgumentException](translations.setActive(session, page, "content", "Wrong type"))
+            assertEquals(
+              session.createQuery(
+                "select p.title from RuntimeGetterPage p where p.id = :id",
+                classOf[String]
+              ).setParameter("id", id).getSingleResult,
+              "Title"
+            )
           }
           inLocale("de") { session =>
             val page = session.find(classOf[RuntimeGetterPage], id)

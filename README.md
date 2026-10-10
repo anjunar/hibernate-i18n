@@ -6,12 +6,15 @@ Session.
 
 | Version | Platform | Scala | Hibernate | License |
 | --- | --- | --- | --- | --- |
-| 1.0.0 | JVM / Java 17+ | 3.9 | 7.4.10.Final | MIT |
+| 1.1.0-SNAPSHOT | JVM / Java 17+ | 3.9 | 7.4.10.Final | MIT |
 
 Documentation: [English](https://docs.anjunar.com/en/hibernate-i18n) · [Deutsch](https://docs.anjunar.com/de/hibernate-i18n)
 Website: [English](https://anjunar.com/en/hibernate-i18n) · [Deutsch](https://anjunar.com/de/hibernate-i18n)
 
 ## Installation
+
+The annotation-driven bootstrap below is new in the unreleased 1.1.0 development version.
+The published 1.0.0 API still requires explicit field bridges.
 
 One runtime artifact, without a Scala suffix. It brings `hibernate-i18n-core`, Hibernate ORM 7.4.10.Final and
 [Hibernate DDL Manager](https://github.com/anjunar/hibernate-ddl-manager) `schema-integration` 1.2.0 transitively.
@@ -19,14 +22,14 @@ The application provides a PostgreSQL DataSource and JDBC driver. The runtime is
 or newer; the public `@Localized` and `@Translation` annotations are Java.
 
 ```scala
-libraryDependencies += "com.anjunar" % "hibernate-i18n" % "1.0.0"
+libraryDependencies += "com.anjunar" % "hibernate-i18n" % "1.1.0-SNAPSHOT"
 ```
 
 ```xml
 <dependency>
   <groupId>com.anjunar</groupId>
   <artifactId>hibernate-i18n</artifactId>
-  <version>1.0.0</version>
+  <version>1.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
@@ -53,12 +56,13 @@ class Page:
   @Translation @SchemaId("f34e45b6") var title: String = uninitialized
 ```
 
-Build the registry through `HibernateI18n`, migrate the complete metadata, then install every localized entity's
-field bridge before opening a Session. Here the DDL manager owns the schema and Hibernate schema generation is
+Build the registry through `HibernateI18n` and migrate the complete metadata. Opening the first localized
+Session registers every mapped `@Localized` entity automatically, using its `@Translation` members, Hibernate
+property access and JPA converters. Here the DDL manager owns the schema and Hibernate schema generation is
 disabled. `dataSource` is the application's configured PostgreSQL DataSource.
 
 ```scala
-import com.anjunar.hibernatei18n.runtime.{HibernateI18n, TranslationField}
+import com.anjunar.hibernatei18n.runtime.HibernateI18n
 import com.anjunar.hibernateddl.integration.HibernateSchemaMigration
 import org.hibernate.boot.MetadataSources
 
@@ -72,9 +76,7 @@ val metadata = new MetadataSources(registry)
   .buildMetadata()
 HibernateSchemaMigration.migrate(metadata, dataSource)
 val factory = metadata.buildSessionFactory()
-val titleField = TranslationField.string[Page]("title", _.title)
-val translations = HibernateI18n.install(
-  factory, classOf[Page], _.id, Seq(titleField))
+val translations = HibernateI18n.translations(factory, classOf[Page]) // Only needed for exact-locale editing.
 ```
 
 Load an existing page in German, edit its ordinary field and write an exact English override through the typed
@@ -88,8 +90,8 @@ try
     val page = session.find(classOf[Page], pageId)
     page.title = "Hallo"
     val english: Option[String] =
-      translations.get(session, page, titleField, "en")
-    translations.set(session, page, titleField, "en", "Hello")
+      translations.get[String](session, page, "title", "en")
+    translations.set(session, page, "title", "en", "Hello")
     tx.commit()
   catch
     case error: Throwable =>
@@ -121,7 +123,7 @@ Start with the entity mapping and bootstrap, then follow the Session, editor and
 **Basics**
 
 - [Entity mapping](https://docs.anjunar.com/en/hibernate-i18n/mapping) – translated fields, field or getter access and converted values with a String database representation
-- [Runtime bootstrap](https://docs.anjunar.com/en/hibernate-i18n/bootstrap) – registry, metadata, schema preparation and installation of every translated field bridge
+- [Runtime bootstrap](docs/runtime.md#metadata-and-schema-startup) – registry, metadata, schema preparation and automatic translation registration
 - [Locales and queries](https://docs.anjunar.com/en/hibernate-i18n/sessions) – a fixed Session locale, per-field fallback, managed edits and localized HQL and Criteria
 
 **Editing**
@@ -140,20 +142,20 @@ Start with the entity mapping and bootstrap, then follow the Session, editor and
 
 ## Limits
 
-Version 1.0.0 supports Hibernate ORM 7.4.10.Final and PostgreSQL. The mapping and lifecycle constraints are part
+The 1.1.0 development version supports Hibernate ORM 7.4.10.Final and PostgreSQL. The mapping and lifecycle constraints are part
 of its runtime contract.
 
 - **Mapping:** one UUID ID, String database values and consistent field or JavaBean getter access. Converted
-  values need matching `TranslationField.converted` encoding and decoding. Translated mapped-superclass members
+  values reuse the mapped JPA converter. Translated mapped-superclass members
   may feed one entity mapping per factory; a supported single-table hierarchy inherits its owning entity's bridge.
-- **Bootstrap:** install every mapped localized entity once, with all translated fields and readers for their
-  named properties. A plain Hibernate registry rejects translation annotations before schema generation.
+- **Bootstrap:** `openSession` automatically registers every mapped localized entity. `install(factory)` can
+  register them eagerly. A plain Hibernate registry rejects translation annotations before schema generation.
 - **Managed edits:** new entities use `persist`; load existing entities in the target locale before editing.
   Detached `merge` and `replicate`, mixed access and `@Column` on a translated property are rejected.
   Use `@Translation(column = ...)` to name its column.
 - **Overrides:** `null` clears a field's override; clearing the last value removes its locale row. Refresh or a
-  new Session observes fallback changes. Editor operations require a managed entity and the field instance
-  passed to installation.
+  new Session observes fallback changes. Editor operations require a managed entity and resolve the field
+  through the handle's name lookup or its `field[V](name)` accessor.
 - **Copies:** `copyInactive(session, source, draft)` copies raw stored rows except the active locale and returns
   their count. Both entities must be managed and have different IDs. Set the draft's active fields first;
   matching target rows are replaced, target locales absent from the source remain, and loaded fields stay intact.

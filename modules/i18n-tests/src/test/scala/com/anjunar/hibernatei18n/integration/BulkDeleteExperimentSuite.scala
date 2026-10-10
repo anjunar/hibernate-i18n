@@ -10,31 +10,35 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
 /** Isolates the Persistence Context behavior of HQL bulk deletion. */
 class BulkDeleteExperimentSuite extends TestPostgres:
-  private def inLocale[A](factory: SessionFactory, locale: String, synchronizer: MapTranslationSynchronizer[LocalizedPage])
-    (body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      synchronizer.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+  private def inLocale[A](
+    factory: SessionFactory,
+    locale: String,
+    synchronizer: MapTranslationSynchronizer[LocalizedPage]
+  )(body: Session => A): A =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        synchronizer.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   test("HQL bulk delete cascades translation rows but leaves loaded rows managed") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -43,26 +47,36 @@ class BulkDeleteExperimentSuite extends TestPostgres:
       val registry = new StandardServiceRegistryBuilder(bootstrap)
         .applySetting("hibernate.connection.datasource", dataSource)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-        .applySetting("hibernate.cache.region.factory_class", new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory))
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory)
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "true")
         .build()
       try
-        val metadata = new MetadataSources(registry).addAnnotatedClassName(classOf[LocalizedPage].getName).buildMetadata()
+        val metadata =
+          new MetadataSources(registry).addAnnotatedClassName(classOf[LocalizedPage].getName).buildMetadata()
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val synchronizer = new MapTranslationSynchronizer[LocalizedPage](
-            classOf[LocalizedPage], "LocalizedPageTranslation", _.id, _.title, _.content
+            classOf[LocalizedPage],
+            "LocalizedPageTranslation",
+            _.id,
+            _.title,
+            _.content
           )
           val listenerRegistry = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
           listenerRegistry.prependListeners(EventType.FLUSH, synchronizer)
           listenerRegistry.prependListeners(EventType.AUTO_FLUSH, synchronizer)
           listenerRegistry.appendListeners(EventType.POST_LOAD, synchronizer)
-          listenerRegistry.appendListeners(EventType.PRE_DELETE,
-            new TranslationCascadeEvictor[LocalizedPage](classOf[LocalizedPage], "LocalizedPageTranslation", _.id))
-          val id = UUID.randomUUID()
-          def rowId(locale: String): HashMap[String, Object] =
-            val key = new HashMap[String, Object]()
+          listenerRegistry.appendListeners(
+            EventType.PRE_DELETE,
+            new TranslationCascadeEvictor[LocalizedPage](classOf[LocalizedPage], "LocalizedPageTranslation", _.id)
+          )
+          val id = util.UUID.randomUUID()
+          def rowId(locale: String): util.HashMap[String, Object] =
+            val key = new util.HashMap[String, Object]()
             key.put("pageId", id)
             key.put("locale", locale)
             key
@@ -86,8 +100,11 @@ class BulkDeleteExperimentSuite extends TestPostgres:
             val german = session.find("LocalizedPageTranslation", rowId("de"))
             val english = session.find("LocalizedPageTranslation", rowId("en"))
             assertEquals(page.title, "Hallo")
-            assertEquals(session.createMutationQuery("delete from LocalizedPage p where p.id = :id")
-              .setParameter("id", id).executeUpdate(), 1)
+            assertEquals(
+              session.createMutationQuery("delete from LocalizedPage p where p.id = :id")
+                .setParameter("id", id).executeUpdate(),
+              1
+            )
             assert(session.contains(page))
             assert(session.find("LocalizedPageTranslation", rowId("de")) eq german)
             assert(session.find("LocalizedPageTranslation", rowId("en")) eq english)

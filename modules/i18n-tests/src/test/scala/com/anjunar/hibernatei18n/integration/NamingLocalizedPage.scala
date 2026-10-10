@@ -6,8 +6,7 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Physical naming probe for generated SQL formulas and query spaces. */
@@ -15,5 +14,5 @@ import scala.compiletime.uninitialized
 @Localized(defaultLocale = "de", fallbackLocale = "en")
 @Table(name = "namingPage")
 class NamingLocalizedPage:
-  @Id @Column(name = "documentId") var id: UUID = uninitialized
+  @Id @Column(name = "documentId") var id: util.UUID = uninitialized
   @Translation var displayTitle: String = uninitialized

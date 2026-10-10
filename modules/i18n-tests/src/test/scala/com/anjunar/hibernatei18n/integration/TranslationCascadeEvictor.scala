@@ -2,22 +2,23 @@ package com.anjunar.hibernatei18n.integration
 
 import org.hibernate.event.spi.{EventSource, PreDeleteEvent, PreDeleteEventListener}
 
-import java.util.UUID
+import java.util
 
 /** Test-only cleanup of managed Map rows removed by the database FK cascade. */
 final class TranslationCascadeEvictor[P <: AnyRef](
   parentClass: Class[P],
   translationEntity: String,
-  idOf: P => UUID
+  idOf: P => util.UUID
 ) extends PreDeleteEventListener:
   override def onPreDelete(event: PreDeleteEvent): Boolean =
     if parentClass.isInstance(event.getEntity) then
       val session = event.getSession.asInstanceOf[EventSource]
       val id = idOf(parentClass.cast(event.getEntity))
       val rows = session.getPersistenceContextInternal.reentrantSafeEntityEntries().collect {
-        case entry if entry.getValue.getPersister.getEntityName == translationEntity &&
-            entry.getKey.isInstanceOf[java.util.Map[?, ?]] &&
-            entry.getKey.asInstanceOf[java.util.Map[?, ?]].get("pageId") == id =>
+        case entry
+            if entry.getValue.getPersister.getEntityName == translationEntity &&
+              entry.getKey.isInstanceOf[util.Map[?, ?]] &&
+              entry.getKey.asInstanceOf[util.Map[?, ?]].get("pageId") == id =>
           entry.getKey
       }
       rows.foreach(session.evict)

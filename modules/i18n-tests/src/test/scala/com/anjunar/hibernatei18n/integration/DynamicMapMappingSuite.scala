@@ -8,8 +8,7 @@ import org.hibernate.StaleObjectStateException
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
-import java.util.HashMap
-import java.util.UUID
+import java.util
 import scala.util.Using
 
 /** Checks whether Hibernate's dynamic Map entity can represent a generated internal model. */
@@ -44,20 +43,24 @@ class DynamicMapMappingSuite extends TestPostgres:
         val parentTable = metadata.getEntityBinding(classOf[FormulaPage].getName).getTable
         val pageIdColumn = binding.getTable.getColumn(new Column("page_id"))
         val foreignKey = binding.getTable.createForeignKey(
-          "fk_dynamic_translation_page", java.util.List.of(pageIdColumn),
-          classOf[FormulaPage].getName, null, null, null
+          "fk_dynamic_translation_page",
+          util.List.of(pageIdColumn),
+          classOf[FormulaPage].getName,
+          null,
+          null,
+          null
         )
         foreignKey.setReferencedTable(parentTable)
         foreignKey.setOnDeleteAction(OnDeleteAction.CASCADE)
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           var translationId: Object = null
           factory.inTransaction { session =>
             val page = new FormulaPage()
             page.id = id
             page.slug = "dynamic"
             session.persist(page)
-            val row = new HashMap[String, Object]()
+            val row = new util.HashMap[String, Object]()
             row.put("pageId", id)
             row.put("locale", "de")
             row.put("title", "Hallo")
@@ -65,30 +68,39 @@ class DynamicMapMappingSuite extends TestPostgres:
             translationId = session.getIdentifier(row)
           }
           assert(translationId != null)
-          assertEquals(scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"), "0")
-          val compositeId = translationId.asInstanceOf[java.util.Map[String, Object]]
+          assertEquals(
+            scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"),
+            "0"
+          )
+          val compositeId = translationId.asInstanceOf[util.Map[String, Object]]
           assertEquals(compositeId.get("pageId"), id)
           assertEquals(compositeId.get("locale"), "de")
           factory.inTransaction { session =>
             val loaded = session.find("DynamicTranslation", translationId)
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             assert(loaded != null)
             assertEquals(loaded.get("pageId"), id)
             assertEquals(loaded.get("locale"), "de")
             assertEquals(loaded.get("title"), "Hallo")
             loaded.put("title", "Guten Tag")
           }
-          assertEquals(scalar(dataSource, s"select title from dynamic_translation where page_id = '$id' and locale = 'de'"), "Guten Tag")
-          assertEquals(scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"), "1")
+          assertEquals(
+            scalar(dataSource, s"select title from dynamic_translation where page_id = '$id' and locale = 'de'"),
+            "Guten Tag"
+          )
+          assertEquals(
+            scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"),
+            "1"
+          )
           Using.resource(factory.openSession()) { first =>
             Using.resource(factory.openSession()) { second =>
               val firstTransaction = first.beginTransaction()
               val secondTransaction = second.beginTransaction()
               try
                 val firstRow = first.find("DynamicTranslation", translationId)
-                  .asInstanceOf[java.util.Map[String, Object]]
+                  .asInstanceOf[util.Map[String, Object]]
                 val secondRow = second.find("DynamicTranslation", translationId)
-                  .asInstanceOf[java.util.Map[String, Object]]
+                  .asInstanceOf[util.Map[String, Object]]
                 firstRow.put("title", "Erster")
                 secondRow.put("title", "Zweiter")
                 firstTransaction.commit()
@@ -100,8 +112,14 @@ class DynamicMapMappingSuite extends TestPostgres:
                 if secondTransaction.isActive then secondTransaction.rollback()
             }
           }
-          assertEquals(scalar(dataSource, s"select title from dynamic_translation where page_id = '$id' and locale = 'de'"), "Erster")
-          assertEquals(scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"), "2")
+          assertEquals(
+            scalar(dataSource, s"select title from dynamic_translation where page_id = '$id' and locale = 'de'"),
+            "Erster"
+          )
+          assertEquals(
+            scalar(dataSource, s"select row_version from dynamic_translation where page_id = '$id' and locale = 'de'"),
+            "2"
+          )
           factory.inTransaction { session =>
             session.remove(session.find(classOf[FormulaPage], id))
           }

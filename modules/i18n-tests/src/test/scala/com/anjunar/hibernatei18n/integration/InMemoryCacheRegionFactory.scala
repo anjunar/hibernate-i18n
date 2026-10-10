@@ -6,28 +6,30 @@ import org.hibernate.cache.spi.support.{DomainDataStorageAccess, RegionFactoryTe
 import org.hibernate.engine.spi.{SessionFactoryImplementor, SharedSessionContractImplementor}
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util
 
 /** Minimal test-only cache provider for observing Hibernate's actual query-cache behavior. */
 final class InMemoryCacheRegionFactory extends RegionFactoryTemplate:
   private val regions = new ConcurrentHashMap[String, ConcurrentHashMap[Object, Object]]()
 
-  override protected def prepareForUse(settings: SessionFactoryOptions, configValues: java.util.Map[String, Object]): Unit = ()
+  override protected def prepareForUse(settings: SessionFactoryOptions, configValues: util.Map[String, Object]): Unit =
+    ()
 
   override protected def releaseFromUse(): Unit = regions.clear()
 
   override protected def createDomainDataStorageAccess(
-      regionConfig: DomainDataRegionConfig,
-      buildingContext: DomainDataRegionBuildingContext
+    regionConfig: DomainDataRegionConfig,
+    buildingContext: DomainDataRegionBuildingContext
   ): DomainDataStorageAccess = storageFor(regionConfig.getRegionName)
 
   override protected def createQueryResultsRegionStorageAccess(
-      regionName: String,
-      sessionFactory: SessionFactoryImplementor
+    regionName: String,
+    sessionFactory: SessionFactoryImplementor
   ): StorageAccess = storageFor(regionName)
 
   override protected def createTimestampsRegionStorageAccess(
-      regionName: String,
-      sessionFactory: SessionFactoryImplementor
+    regionName: String,
+    sessionFactory: SessionFactoryImplementor
   ): StorageAccess = storageFor(regionName)
 
   private def storageFor(regionName: String): DomainDataStorageAccess =

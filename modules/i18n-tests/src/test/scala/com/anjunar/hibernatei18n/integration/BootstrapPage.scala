@@ -6,13 +6,12 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Plain entity for verifying the build and database fixture. */
 @Entity
 @Table(name = "bootstrap_page")
 class BootstrapPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   var slug: String = uninitialized

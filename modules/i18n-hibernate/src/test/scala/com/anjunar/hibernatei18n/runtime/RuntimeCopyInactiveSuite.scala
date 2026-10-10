@@ -6,12 +6,14 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.util.Using
+import java.nio.file.Path
+import munit.FunSuite
 
-class RuntimeCopyInactiveSuite extends munit.FunSuite:
+class RuntimeCopyInactiveSuite extends FunSuite:
   test("copyInactive copies exact stored rows except the active locale") {
-    val targetDirectory = java.nio.file.Path.of("target").toAbsolutePath
+    val targetDirectory = Path.of("target").toAbsolutePath
     Files.createDirectories(targetDirectory)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(targetDirectory, "i18n-copy-inactive-pg-"))
@@ -27,11 +29,19 @@ class RuntimeCopyInactiveSuite extends munit.FunSuite:
           .buildMetadata().buildSessionFactory()) { factory =>
           val title = TranslationField.string[RuntimePage]("title", _.title)
           val content = TranslationField.converted[RuntimePage, RuntimeMarkdown](
-            "content", _.content, _.source, RuntimeMarkdown.apply)
-          val translations = HibernateI18n.install(factory, classOf[RuntimePage], _.id,
-            Seq(title, content))
-          val sourceId = UUID.randomUUID()
-          val draftId = UUID.randomUUID()
+            "content",
+            _.content,
+            _.source,
+            RuntimeMarkdown.apply
+          )
+          val translations = HibernateI18n.install(
+            factory,
+            classOf[RuntimePage],
+            _.id,
+            Seq(title, content)
+          )
+          val sourceId = util.UUID.randomUUID()
+          val draftId = util.UUID.randomUUID()
 
           def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
@@ -78,11 +88,15 @@ class RuntimeCopyInactiveSuite extends munit.FunSuite:
             assertEquals(draft.title, "Entwurf")
             assertEquals(draft.content, RuntimeMarkdown("Entwurfsinhalt"))
             assertEquals(translations.get(session, draft, title, "en"), Some("English source"))
-            assertEquals(translations.get(session, draft, content, "en"),
-              Some(RuntimeMarkdown("English content")))
+            assertEquals(
+              translations.get(session, draft, content, "en"),
+              Some(RuntimeMarkdown("English content"))
+            )
             assertEquals(translations.get(session, draft, title, "fr"), None)
-            assertEquals(translations.get(session, draft, content, "fr"),
-              Some(RuntimeMarkdown("Contenu français")))
+            assertEquals(
+              translations.get(session, draft, content, "fr"),
+              Some(RuntimeMarkdown("Contenu français"))
+            )
             assertEquals(translations.get(session, draft, title, "it"), Some("Pagina italiana"))
             assertEquals(translations.get(session, draft, title, "es"), Some("Borrador"))
             assertEquals(translations.copyInactive(session, source, draft), 3)
@@ -105,7 +119,7 @@ class RuntimeCopyInactiveSuite extends munit.FunSuite:
             assertEquals(draft.title, "English source")
             assertEquals(draft.content, RuntimeMarkdown("English content"))
           }
-          val freshDraftId = UUID.randomUUID()
+          val freshDraftId = util.UUID.randomUUID()
           inLocale("de") { session =>
             val source = session.find(classOf[RuntimePage], sourceId)
             val draft = new RuntimePage()

@@ -10,12 +10,16 @@ import org.hibernate.annotations.TenantId
 import org.hibernate.MappingException
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
-class RuntimeInheritanceI18nSuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+import org.hibernate.Session
+import org.hibernate.mapping.{Column as MappingColumn}
+class RuntimeInheritanceI18nSuite extends FunSuite:
   test("mapped-superclass identity and translations work alongside entity-subclass translation") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-inheritance-pg-"))
@@ -37,17 +41,17 @@ class RuntimeInheritanceI18nSuite extends munit.FunSuite:
           .buildMetadata()
         assertEquals(
           metadata.getEntityBinding(classOf[RuntimeInheritedIdentityPage].getName)
-            .getTable.getColumn(new org.hibernate.mapping.Column("title")),
+            .getTable.getColumn(new MappingColumn("title")),
           null
         )
         assertEquals(
           metadata.getEntityBinding(classOf[RuntimeInheritedTranslationPage].getName)
-            .getTable.getColumn(new org.hibernate.mapping.Column("label")),
+            .getTable.getColumn(new MappingColumn("label")),
           null
         )
         assertEquals(
           metadata.getEntityBinding(classOf[TranslationFieldRoot].getName)
-            .getTable.getColumn(new org.hibernate.mapping.Column("value")),
+            .getTable.getColumn(new MappingColumn("value")),
           null
         )
         Using.resource(metadata.buildSessionFactory()) { factory =>
@@ -57,7 +61,7 @@ class RuntimeInheritanceI18nSuite extends munit.FunSuite:
           val inherited = new RuntimeInheritedTranslationPage()
           val markdown = new RuntimeMarkdownField()
           markdown.fieldKey = "description"
-          def inLocale[A](locale: String)(body: org.hibernate.Session => A): A =
+          def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale, "tenant-a")) { session =>
               val tx = session.beginTransaction()
               try

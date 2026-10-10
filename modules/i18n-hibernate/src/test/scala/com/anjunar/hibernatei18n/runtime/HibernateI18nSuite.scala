@@ -9,12 +9,18 @@ import org.hibernate.StaleObjectStateException
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
-class HibernateI18nSuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+import org.hibernate.Hibernate
+import org.hibernate.HibernateException
+import org.hibernate.Session
+import org.hibernate.mapping.Column
+class HibernateI18nSuite extends FunSuite:
   test("a mismatched development field reader fails before persisting a translation") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-reader-pg-"))
@@ -38,7 +44,7 @@ class HibernateI18nSuite extends munit.FunSuite:
             val transaction = session.beginTransaction()
             try
               val page = new RuntimeSecondaryPage()
-              page.id = UUID.randomUUID()
+              page.id = util.UUID.randomUUID()
               page.title = "Actual title"
               session.persist(page)
               val error = intercept[RuntimeException](transaction.commit())
@@ -54,7 +60,7 @@ class HibernateI18nSuite extends munit.FunSuite:
   }
 
   test("published runtime bootstrap loads and writes ordinary typed properties by locale") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-pg-"))
@@ -80,7 +86,7 @@ class HibernateI18nSuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeSecondaryPage].getName).buildMetadata()
         assertEquals(
           metadata.getEntityBinding(classOf[RuntimePage].getName)
-            .getTable.getColumn(new org.hibernate.mapping.Column("title")),
+            .getTable.getColumn(new Column("title")),
           null
         )
         Using.resource(metadata.buildSessionFactory()) { factory =>
@@ -93,8 +99,8 @@ class HibernateI18nSuite extends munit.FunSuite:
           intercept[IllegalArgumentException](translations.field[String]("content"))
           intercept[IllegalArgumentException](translations.field[AnyRef]("title"))
           intercept[IllegalArgumentException](HibernateI18n.translations(factory, classOf[String]))
-          val id = UUID.randomUUID()
-          def inLocale[A](locale: String)(body: org.hibernate.Session => A): A =
+          val id = util.UUID.randomUUID()
+          def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
               val transaction = session.beginTransaction()
               try
@@ -113,7 +119,7 @@ class HibernateI18nSuite extends munit.FunSuite:
             page.content = RuntimeMarkdown("**Deutsch**")
             session.persist(page)
             val secondary = new RuntimeSecondaryPage()
-            secondary.id = UUID.randomUUID()
+            secondary.id = util.UUID.randomUUID()
             secondary.title = "Automatically registered"
             session.persist(secondary)
           }
@@ -132,13 +138,13 @@ class HibernateI18nSuite extends munit.FunSuite:
           }
           inLocale("de") { session =>
             val page = session.getReference(classOf[RuntimePage], id)
-            assert(!org.hibernate.Hibernate.isInitialized(page))
+            assert(!Hibernate.isInitialized(page))
             assertEquals(titleField.read(page), "Hallo")
             assertEquals(contentField.read(page), RuntimeMarkdown("**Deutsch**"))
           }
           inLocale("de") { session =>
             val page = session.getReference(classOf[RuntimePage], id)
-            assert(!org.hibernate.Hibernate.isInitialized(page))
+            assert(!Hibernate.isInitialized(page))
             translations.setActive(session, page, "title", "Über Proxy")
           }
           inLocale("de") { session =>
@@ -176,7 +182,7 @@ class HibernateI18nSuite extends munit.FunSuite:
             )
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, RuntimeMarkdown("**Deutsch**"))
-            intercept[org.hibernate.HibernateException] {
+            intercept[HibernateException] {
               translations.set(session, page, titleField, "de", "Nicht erlaubt")
             }
           }
@@ -307,7 +313,7 @@ class HibernateI18nSuite extends munit.FunSuite:
             val page = session.find(classOf[RuntimePage], id)
             assertEquals(translations.get(session, page, titleField, "fr-CA"), None)
           }
-          val secondaryId = UUID.randomUUID()
+          val secondaryId = util.UUID.randomUUID()
           inLocale("de") { session =>
             val secondary = new RuntimeSecondaryPage()
             secondary.id = secondaryId
@@ -345,7 +351,7 @@ class HibernateI18nSuite extends munit.FunSuite:
               "Zweite gemeinsam"
             )
           }
-          val fallbackId = UUID.randomUUID()
+          val fallbackId = util.UUID.randomUUID()
           inLocale("en") { session =>
             val page = new RuntimePage()
             page.id = fallbackId

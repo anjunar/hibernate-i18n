@@ -10,13 +10,15 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
-class RuntimeTenantI18nSuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+class RuntimeTenantI18nSuite extends FunSuite:
   test("development editor and domain paths respect the Session tenant") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-tenant-pg-"))
@@ -33,8 +35,8 @@ class RuntimeTenantI18nSuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeTenantPage].getName)
           .buildMetadata().buildSessionFactory()
         Using.resource(factory) { _ =>
-          val idA = UUID.randomUUID()
-          val idB = UUID.randomUUID()
+          val idA = util.UUID.randomUUID()
+          val idB = util.UUID.randomUUID()
           def inTenant[A](tenant: String, locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale, tenant)) { session =>
               val transaction = session.beginTransaction()
@@ -100,7 +102,7 @@ class RuntimeTenantI18nSuite extends munit.FunSuite:
               List("English B")
             )
           }
-          val draftAId = UUID.randomUUID()
+          val draftAId = util.UUID.randomUUID()
           inTenant("tenant-a", "de") { session =>
             val source = session.find(classOf[RuntimeTenantPage], idA)
             val draft = new RuntimeTenantPage()

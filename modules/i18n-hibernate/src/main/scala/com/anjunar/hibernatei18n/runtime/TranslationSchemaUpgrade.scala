@@ -32,8 +32,10 @@ object TranslationSchemaUpgrade:
     require(metadata != null, "Hibernate Metadata is required")
     require(dataSource != null, "A DataSource is required")
     val database = metadata.getDatabase
-    require(database.getDialect.isInstanceOf[PostgreSQLDialect],
-      "Translation text upgrade currently supports PostgreSQL only")
+    require(
+      database.getDialect.isInstanceOf[PostgreSQLDialect],
+      "Translation text upgrade currently supports PostgreSQL only"
+    )
     val names = database.getJdbcEnvironment.getIdentifierHelper
     val configuredSchema = database.getServiceRegistry.requireService(classOf[ConfigurationService])
       .getSetting(MappingSettings.DEFAULT_SCHEMA, StandardConverters.STRING)
@@ -45,11 +47,14 @@ object TranslationSchemaUpgrade:
       require(connection.getAutoCommit, "Translation text upgrade requires an auto-commit DataSource connection")
       val schema = defaultSchema.map(physical).getOrElse(connection.getSchema)
       val targets = metadata.getEntityBindings.asScala.toVector
-        .filter(binding => binding.getClassName != null &&
-          binding.getMappedClass.isAnnotationPresent(classOf[Localized]))
+        .filter(binding =>
+          binding.getClassName != null &&
+            binding.getMappedClass.isAnnotationPresent(classOf[Localized])
+        )
         .flatMap { parent =>
           val generated = metadata.getEntityBinding(
-            TranslationMappingXml.translationEntityName(parent.getMappedClass))
+            TranslationMappingXml.translationEntityName(parent.getMappedClass)
+          )
           if generated == null then
             throw new IllegalArgumentException(s"Missing generated translation mapping for ${parent.getClassName}")
           val table = generated.getTable
@@ -57,9 +62,14 @@ object TranslationSchemaUpgrade:
           LocalizedEntityMembers.inspect(parent.getMappedClass).translations.map { field =>
             val columns = generated.getProperty(field.name).getValue.getColumns
             if columns.size() != 1 || !columns.get(0).getSqlType(metadata).equalsIgnoreCase("text") then
-              throw new IllegalArgumentException(s"Expected one TEXT translation column for ${parent.getClassName}.${field.name}")
-            TextColumn(tableSchema, physical(table.getNameIdentifier),
-              physical(Identifier.toIdentifier(columns.get(0).getName, columns.get(0).isQuoted)))
+              throw new IllegalArgumentException(
+                s"Expected one TEXT translation column for ${parent.getClassName}.${field.name}"
+              )
+            TextColumn(
+              tableSchema,
+              physical(table.getNameIdentifier),
+              physical(Identifier.toIdentifier(columns.get(0).getName, columns.get(0).isQuoted))
+            )
           }
         }.distinct
       connection.setAutoCommit(false)
@@ -87,7 +97,7 @@ object TranslationSchemaUpgrade:
       }
     }
     currentType match
-      case None | Some("text") => false
+      case None | Some("text")       => false
       case Some("character varying") =>
         def quote(value: String): String = "\"" + value.replace("\"", "\"\"") + "\""
         val table = s"${quote(target.schema)}.${quote(target.table)}"
@@ -97,4 +107,5 @@ object TranslationSchemaUpgrade:
         true
       case Some(other) =>
         throw new IllegalStateException(
-          s"Refusing to change ${target.schema}.${target.table}.${target.column} from $other to text")
+          s"Refusing to change ${target.schema}.${target.table}.${target.column} from $other to text"
+        )

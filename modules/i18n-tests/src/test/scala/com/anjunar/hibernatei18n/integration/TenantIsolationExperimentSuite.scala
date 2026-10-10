@@ -12,7 +12,7 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
@@ -36,7 +36,7 @@ class TenantIsolationExperimentSuite extends TestPostgres:
   test("generated translation rows and formulas respect the parent tenant boundary") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -45,7 +45,10 @@ class TenantIsolationExperimentSuite extends TestPostgres:
       val registry = new StandardServiceRegistryBuilder(bootstrap)
         .applySetting("hibernate.connection.datasource", dataSource)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-        .applySetting("hibernate.cache.region.factory_class", new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory))
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory)
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "true")
         .applySetting("hibernate.generate_statistics", "true")
@@ -57,15 +60,19 @@ class TenantIsolationExperimentSuite extends TestPostgres:
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val listenerRegistry = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
-          listenerRegistry.appendListeners(EventType.PRE_DELETE,
+          listenerRegistry.appendListeners(
+            EventType.PRE_DELETE,
             new TranslationCascadeEvictor[TenantLocalizedPage](
-              classOf[TenantLocalizedPage], "TenantLocalizedPageTranslation", _.id
-            ))
-          val tenantAId = UUID.randomUUID()
-          val tenantBId = UUID.randomUUID()
-          val foreignParentId = UUID.randomUUID()
-          def key(id: UUID): HashMap[String, Object] =
-            val result = new HashMap[String, Object]()
+              classOf[TenantLocalizedPage],
+              "TenantLocalizedPageTranslation",
+              _.id
+            )
+          )
+          val tenantAId = util.UUID.randomUUID()
+          val tenantBId = util.UUID.randomUUID()
+          val foreignParentId = util.UUID.randomUUID()
+          def key(id: util.UUID): util.HashMap[String, Object] =
+            val result = new util.HashMap[String, Object]()
             result.put("pageId", id)
             result.put("locale", "de")
             result
@@ -106,19 +113,25 @@ class TenantIsolationExperimentSuite extends TestPostgres:
             assert(session.find(classOf[TenantLocalizedPage], tenantBId) == null)
             assert(session.find("TenantLocalizedPageTranslation", key(tenantBId)) == null)
             val ownRow = session.find("TenantLocalizedPageTranslation", key(tenantAId))
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             assertEquals(ownRow.get("tenantId"), "tenant-a")
-            assertEquals(session.createQuery("from TenantLocalizedPageTranslation", classOf[java.util.Map[?, ?]])
-              .getResultList.size(), 1)
+            assertEquals(
+              session.createQuery("from TenantLocalizedPageTranslation", classOf[util.Map[?, ?]])
+                .getResultList.size(),
+              1
+            )
           }
           inTenant(factory, "tenant-b") { session =>
             assertEquals(session.find(classOf[TenantLocalizedPage], tenantBId).title, "Tenant B")
             assert(session.find("TenantLocalizedPageTranslation", key(tenantAId)) == null)
             val ownRow = session.find("TenantLocalizedPageTranslation", key(tenantBId))
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             assertEquals(ownRow.get("tenantId"), "tenant-b")
-            assertEquals(session.createQuery("from TenantLocalizedPageTranslation", classOf[java.util.Map[?, ?]])
-              .getResultList.size(), 1)
+            assertEquals(
+              session.createQuery("from TenantLocalizedPageTranslation", classOf[util.Map[?, ?]])
+                .getResultList.size(),
+              1
+            )
           }
           def cachedTitles(tenant: String): List[String] =
             inTenant(factory, tenant) { session =>
@@ -140,8 +153,14 @@ class TenantIsolationExperimentSuite extends TestPostgres:
             session.flush()
             assert(session.find("TenantLocalizedPageTranslation", key(tenantAId)) == null)
           }
-          assertEquals(scalar(dataSource, s"select count(*) from tenant_page_translation where page_id = '$tenantAId'"), "0")
-          assertEquals(scalar(dataSource, s"select count(*) from tenant_page_translation where page_id = '$tenantBId'"), "1")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from tenant_page_translation where page_id = '$tenantAId'"),
+            "0"
+          )
+          assertEquals(
+            scalar(dataSource, s"select count(*) from tenant_page_translation where page_id = '$tenantBId'"),
+            "1"
+          )
           assertEquals(cachedTitles("tenant-a"), Nil)
           assertEquals(cachedTitles("tenant-b"), List("Tenant B"))
         }

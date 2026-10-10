@@ -10,11 +10,10 @@ import org.hibernate.annotations.TenantId
 import org.hibernate.MappingException
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
 @Entity
 @DiscriminatorValue("markdown")
 class RuntimeMarkdownField extends RuntimeTextField
-

@@ -5,19 +5,19 @@ import org.hibernate.{HibernateException, Session}
 import org.hibernate.engine.spi.{EntityEntry, Status}
 import org.hibernate.event.spi.{AutoFlushEvent, AutoFlushEventListener, ClearEvent, ClearEventListener, EventSource, EvictEvent, EvictEventListener, FlushEvent, FlushEventListener, MergeContext, MergeEvent, MergeEventListener, PostLoadEvent, PostLoadEventListener, RefreshContext, RefreshEvent, RefreshEventListener, ReplicateEvent, ReplicateEventListener}
 
-import java.util.{HashMap, IdentityHashMap, Objects, UUID, WeakHashMap}
+import java.util
 import scala.collection.mutable
 
 /** Synchronizes managed domain fields with the exact-locale translation row during flush. */
 private[runtime] final class TranslationSynchronizer[P <: AnyRef](
   entityClass: Class[P],
   translationEntity: String,
-  idOf: P => UUID,
+  idOf: P => util.UUID,
   fields: Seq[TranslationField[P, ?]]
 ) extends FlushEventListener, AutoFlushEventListener, ClearEventListener, EvictEventListener,
-    RefreshEventListener, MergeEventListener, ReplicateEventListener, PostLoadEventListener:
+      RefreshEventListener, MergeEventListener, ReplicateEventListener, PostLoadEventListener:
   private val active = mutable.Set.empty[Session]
-  private val snapshots = new WeakHashMap[EventSource, IdentityHashMap[P, Vector[Any]]]()
+  private val snapshots = new util.WeakHashMap[EventSource, util.IdentityHashMap[P, Vector[Any]]]()
 
   override def onFlush(event: FlushEvent): Unit = synchronize(event.getSession)
   override def onAutoFlush(event: AutoFlushEvent): Unit = synchronize(event.getSession)
@@ -35,7 +35,9 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
   override def onReplicate(event: ReplicateEvent): Unit =
     if entityClass.isInstance(event.getObject) then
       SessionContentLocale.required(event.getSession)
-      throw new HibernateException("Cannot replicate a localized entity; load and edit managed state in its target locale")
+      throw new HibernateException(
+        "Cannot replicate a localized entity; load and edit managed state in its target locale"
+      )
 
   override def onPostLoad(event: PostLoadEvent): Unit =
     if entityClass.isInstance(event.getEntity) then
@@ -43,8 +45,8 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
       val locale = SessionContentLocale.required(event.getSession)
       ManagedTranslationRows.find(event.getSession, translationEntity, rowId(idOf(page), locale))
 
-  private def rowId(pageId: UUID, locale: String): HashMap[String, Object] =
-    val id = new HashMap[String, Object]()
+  private def rowId(pageId: util.UUID, locale: String): util.HashMap[String, Object] =
+    val id = new util.HashMap[String, Object]()
     id.put("pageId", pageId)
     id.put("locale", locale)
     id
@@ -57,7 +59,7 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
     val actual = persister.getValues(page)
     fields.foreach { field =>
       val index = names.indexOf(field.name)
-      if index < 0 || !Objects.equals(actual(index), field.readAny(page)) then
+      if index < 0 || !util.Objects.equals(actual(index), field.readAny(page)) then
         throw new HibernateException(
           s"Runtime field reader for ${entityClass.getName}.${field.name} does not match the mapped property"
         )
@@ -78,13 +80,13 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
   private def changed(session: EventSource, page: P, entry: EntityEntry): Vector[Boolean] = synchronized {
     val previous = Option(snapshots.get(session)).flatMap(values => Option(values.get(page)))
       .getOrElse(initialValues(entry))
-    previous.zip(values(page)).map((before, after) => !Objects.equals(before, after))
+    previous.zip(values(page)).map((before, after) => !util.Objects.equals(before, after))
   }
 
   private def remember(session: EventSource, page: P): Unit = synchronized {
     var entries = snapshots.get(session)
     if entries == null then
-      entries = new IdentityHashMap[P, Vector[Any]]()
+      entries = new util.IdentityHashMap[P, Vector[Any]]()
       snapshots.put(session, entries)
     entries.put(page, values(page))
   }
@@ -138,7 +140,7 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
           else null
           if translation == null then
             if fields.indices.exists(index => differences(index) && fields(index).readAny(page) != null) then
-              val created = new HashMap[String, Object]()
+              val created = new util.HashMap[String, Object]()
               created.putAll(id)
               fields.indices.filter(differences).foreach { index =>
                 val field = fields(index)
@@ -158,7 +160,7 @@ private[runtime] final class TranslationSynchronizer[P <: AnyRef](
 
   private def rejectOverlappingEditorChanges(
     session: EventSource,
-    translation: java.util.Map[String, Object],
+    translation: util.Map[String, Object],
     differences: Vector[Boolean]
   ): Unit =
     val entry = session.getPersistenceContextInternal.getEntry(translation)

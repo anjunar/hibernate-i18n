@@ -6,19 +6,18 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Guard probe: a getter annotation must also fail without @Localized. */
 @Entity
 @Table(name = "unlocalized_property_page")
 class UnlocalizedPropertyPage:
-  private var idValue: UUID = uninitialized
+  private var idValue: util.UUID = uninitialized
   private var titleValue: String = uninitialized
 
-  @Id def getId: UUID = idValue
-  def setId(value: UUID): Unit = idValue = value
+  @Id def getId: util.UUID = idValue
+  def setId(value: util.UUID): Unit = idValue = value
 
   @Translation def getTitle: String = titleValue
   def setTitle(value: String): Unit = titleValue = value

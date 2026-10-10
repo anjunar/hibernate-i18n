@@ -6,8 +6,7 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Cache probe: deliberately unsafe with a localized formula in the entity state. */
@@ -16,5 +15,5 @@ import scala.compiletime.uninitialized
 @Table(name = "cached_page")
 @Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 class CachedLocalizedPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @Translation var title: String = uninitialized

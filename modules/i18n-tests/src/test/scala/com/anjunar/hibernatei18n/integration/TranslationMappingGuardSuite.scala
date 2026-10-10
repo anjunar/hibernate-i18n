@@ -3,8 +3,9 @@ package com.anjunar.hibernatei18n.integration
 import org.hibernate.MappingException
 import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
+import munit.FunSuite
 
-class TranslationMappingGuardSuite extends munit.FunSuite:
+class TranslationMappingGuardSuite extends FunSuite:
   test("an unsupported @Translation mapping fails before metadata can be used for DDL") {
     val registry = new StandardServiceRegistryBuilder()
       .applySetting("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect")

@@ -9,7 +9,7 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -19,5 +19,5 @@ import scala.util.Using
 @Cacheable
 @Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 class RuntimeCachedPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @Translation var title: String = uninitialized

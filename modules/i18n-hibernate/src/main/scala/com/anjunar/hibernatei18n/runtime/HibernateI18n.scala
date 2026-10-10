@@ -11,8 +11,7 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 
-import java.util.UUID
-import java.util.WeakHashMap
+import java.util
 import java.util.function.UnaryOperator
 import scala.jdk.CollectionConverters.*
 
@@ -24,7 +23,7 @@ object HibernateI18n:
     var complete: Boolean = false
   )
 
-  private val registrations = new WeakHashMap[SessionFactory, Registration]()
+  private val registrations = new util.WeakHashMap[SessionFactory, Registration]()
 
   private def localizedEntities(factory: SessionFactory): Set[Class[?]] =
     factory.getMetamodel.getEntities.asScala.iterator
@@ -33,7 +32,7 @@ object HibernateI18n:
 
   def registryBuilder(): StandardServiceRegistryBuilder =
     val classLoading = new ClassLoaderServiceImpl():
-      override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+      override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
         val discovered = super.loadJavaServices(contract).asScala.toSeq
         val providers: Seq[S] =
           if contract == classOf[MetadataSourcesContributor] then
@@ -65,7 +64,7 @@ object HibernateI18n:
   def install[P <: AnyRef](
     factory: SessionFactory,
     entityClass: Class[P],
-    idOf: P => UUID,
+    idOf: P => util.UUID,
     fields: Seq[TranslationField[P, ?]]
   ): Translations[P] = synchronized {
     if !localizedEntities(factory).contains(entityClass) then

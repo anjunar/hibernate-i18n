@@ -10,7 +10,7 @@ import org.hibernate.boot.registry.classloading.internal.ClassLoaderServiceImpl
 import org.hibernate.boot.spi.AdditionalMappingContributor
 import org.hibernate.engine.spi.{SessionFactoryImplementor, SharedSessionContractImplementor}
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
@@ -18,7 +18,7 @@ import scala.util.Using
 class QueryCacheIsolationExperimentSuite extends TestPostgres:
   private def withoutProductionGuard: ClassLoaderServiceImpl =
     new ClassLoaderServiceImpl():
-      override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+      override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
         val discovered = super.loadJavaServices(contract)
         if contract == classOf[AdditionalMappingContributor] then
           discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -43,44 +43,49 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
   }
 
   test("experimental mapping refuses a cached localized entity") {
-    assert(rejectedCacheMapping(classOf[CachedLocalizedPage], queryCache = false).contains("must not use second-level caching"))
+    assert(rejectedCacheMapping(
+      classOf[CachedLocalizedPage],
+      queryCache = false
+    ).contains("must not use second-level caching"))
   }
 
-  private def title(factory: SessionFactory, locale: String, id: UUID, cached: Boolean): String =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      SessionContentLocale.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = session.createQuery("select p.title from LocalizedPage p where p.id = :id", classOf[String])
+  private def title(factory: SessionFactory, locale: String, id: util.UUID, cached: Boolean): String =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        SessionContentLocale.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = session.createQuery("select p.title from LocalizedPage p where p.id = :id", classOf[String])
+            .setParameter("id", id)
+            .setCacheable(cached)
+            .getSingleResult
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
+    }
+
+  private def entityTitle(factory: SessionFactory, locale: String, id: util.UUID): String =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        SessionContentLocale.bind(session, locale)
+        session.createQuery("select p from LocalizedPage p where p.id = :id", classOf[LocalizedPage])
           .setParameter("id", id)
-          .setCacheable(cached)
-          .getSingleResult
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+          .setCacheable(true)
+          .getSingleResult.title
     }
 
-  private def entityTitle(factory: SessionFactory, locale: String, id: UUID): String =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      SessionContentLocale.bind(session, locale)
-      session.createQuery("select p from LocalizedPage p where p.id = :id", classOf[LocalizedPage])
-        .setParameter("id", id)
-        .setCacheable(true)
-        .getSingleResult.title
-    }
-
-  private def seedLocalizedPage(factory: SessionFactory): UUID =
-    val id = UUID.randomUUID()
+  private def seedLocalizedPage(factory: SessionFactory): util.UUID =
+    val id = util.UUID.randomUUID()
     factory.inTransaction { session =>
       val page = new LocalizedPage()
       page.id = id
       page.slug = "cache-probe"
       session.persist(page)
       for (locale, translatedTitle) <- List(("de", "Hallo"), ("en", "Hello")) do
-        val row = new HashMap[String, Object]()
+        val row = new util.HashMap[String, Object]()
         row.put("pageId", id)
         row.put("locale", locale)
         row.put("title", translatedTitle)
@@ -124,7 +129,10 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
       val registry = new StandardServiceRegistryBuilder(bootstrap)
         .applySetting("hibernate.connection.datasource", dataSource)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-        .applySetting("hibernate.cache.region.factory_class", new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory))
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory)
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "true")
         .applySetting("hibernate.generate_statistics", "true")
@@ -136,22 +144,27 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
           .buildMetadata()
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val id = seedLocalizedPage(factory)
-          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { mismatched =>
-            val error = intercept[IllegalArgumentException](SessionContentLocale.bind(mismatched, "en"))
-            assert(error.getMessage.contains("does not match"))
-            SessionContentLocale.bind(mismatched, "de")
-            mismatched.clear()
-            assertEquals(SessionContentLocale.required(mismatched.asInstanceOf[SharedSessionContractImplementor]), "de")
-            intercept[IllegalStateException](SessionContentLocale.bind(mismatched, "en"))
+          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) {
+            mismatched =>
+              val error = intercept[IllegalArgumentException](SessionContentLocale.bind(mismatched, "en"))
+              assert(error.getMessage.contains("does not match"))
+              SessionContentLocale.bind(mismatched, "de")
+              mismatched.clear()
+              assertEquals(
+                SessionContentLocale.required(mismatched.asInstanceOf[SharedSessionContractImplementor]),
+                "de"
+              )
+              intercept[IllegalStateException](SessionContentLocale.bind(mismatched, "en"))
           }
-          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { unbound =>
-            val error = intercept[HibernateException] {
-              unbound.createQuery("select p.title from LocalizedPage p where p.id = :id", classOf[String])
-                .setParameter("id", id)
-                .setCacheable(true)
-                .getSingleResult
-            }
-            assert(error.getMessage.contains("No content locale bound"))
+          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) {
+            unbound =>
+              val error = intercept[HibernateException] {
+                unbound.createQuery("select p.title from LocalizedPage p where p.id = :id", classOf[String])
+                  .setParameter("id", id)
+                  .setCacheable(true)
+                  .getSingleResult
+              }
+              assert(error.getMessage.contains("No content locale bound"))
           }
           factory.getStatistics.clear()
 
@@ -169,11 +182,11 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
           assertEquals(entityTitle(factory, "en", id), "Hello")
 
           factory.inTransaction { session =>
-            val rowId = new HashMap[String, Object]()
+            val rowId = new util.HashMap[String, Object]()
             rowId.put("pageId", id)
             rowId.put("locale", "en")
             val row = session.find("LocalizedPageTranslation", rowId)
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             row.put("title", "Updated")
           }
           assertEquals(title(factory, "en", id, cached = true), "Updated")
@@ -182,7 +195,7 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
           assertEquals(entityTitle(factory, "en", id), "Updated")
           assertEquals(entityTitle(factory, "de", id), "Hallo")
 
-          val plainId = UUID.randomUUID()
+          val plainId = util.UUID.randomUUID()
           factory.inTransaction { session =>
             val plain = new CachedPlainPage()
             plain.id = plainId
@@ -237,13 +250,13 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
           .addAnnotatedClassName(classOf[CachedLocalizedPage].getName)
           .buildMetadata()
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           factory.inTransaction { session =>
             val page = new CachedLocalizedPage()
             page.id = id
             session.persist(page)
             for (locale, translatedTitle) <- List(("de", "Hallo"), ("en", "Hello")) do
-              val row = new HashMap[String, Object]()
+              val row = new util.HashMap[String, Object]()
               row.put("pageId", id)
               row.put("locale", locale)
               row.put("title", translatedTitle)
@@ -253,7 +266,9 @@ class QueryCacheIsolationExperimentSuite extends TestPostgres:
           factory.getStatistics.clear()
 
           def load(locale: String): String =
-            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
+            Using.resource(
+              factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()
+            ) { session =>
               session.find(classOf[CachedLocalizedPage], id).title
             }
 

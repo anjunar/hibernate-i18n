@@ -7,6 +7,7 @@ import org.hibernate.boot.ResourceStreamLocator
 import org.hibernate.boot.spi.{AdditionalMappingContributions, AdditionalMappingContributor, InFlightMetadataCollector, MetadataBuildingContext}
 
 import scala.jdk.CollectionConverters.*
+import java.lang.{Boolean as JavaBoolean}
 
 /** Only installed by HibernateI18n.registryBuilder. */
 final class TranslationMetadata extends AdditionalMappingContributor:
@@ -17,7 +18,7 @@ final class TranslationMetadata extends AdditionalMappingContributor:
     buildingContext: MetadataBuildingContext
   ): Unit =
     val settings = buildingContext.getBootstrapContext.getConfigurationService.getSettings
-    val queryCache = java.lang.Boolean.parseBoolean(String.valueOf(settings.get("hibernate.cache.use_query_cache")))
+    val queryCache = JavaBoolean.parseBoolean(String.valueOf(settings.get("hibernate.cache.use_query_cache")))
     val bindings = metadata.getEntityBindings.asScala.toSeq
     TranslationMappingXml.validateInheritance(bindings
       .filter(_.getClassName != null).map(_.getMappedClass))
@@ -29,6 +30,10 @@ final class TranslationMetadata extends AdditionalMappingContributor:
         root.setCacheConcurrencyStrategy(null)
         root.setCacheRegionName(null)
         TranslationCachePolicy.validate(parent, queryCache, false)
-        TranslationMetadataFinalizer.complete(parent, metadata, buildingContext,
-          TranslationMappingXml.translationEntityName(parent.getMappedClass))
+        TranslationMetadataFinalizer.complete(
+          parent,
+          metadata,
+          buildingContext,
+          TranslationMappingXml.translationEntityName(parent.getMappedClass)
+        )
     }

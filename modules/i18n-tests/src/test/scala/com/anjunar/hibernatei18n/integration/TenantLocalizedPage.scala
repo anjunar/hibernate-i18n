@@ -6,8 +6,7 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Shared-table tenant probe for the annotation-derived translation mapping. */
@@ -15,6 +14,6 @@ import scala.compiletime.uninitialized
 @Localized(defaultLocale = "de", fallbackLocale = "en")
 @Table(name = "tenant_page")
 class TenantLocalizedPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @TenantId @Column(name = "tenant_id") var tenantId: String = uninitialized
   @Translation var title: String = uninitialized

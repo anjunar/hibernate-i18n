@@ -27,16 +27,16 @@ private[hibernatei18n] object SessionContentLocale:
       case Binding(previous) if previous == locale =>
         validateInspector(session.asInstanceOf[SharedSessionContractImplementor], locale)
       case Binding(_) => throw new IllegalStateException("The content locale of a Session cannot change")
-      case _ => throw new HibernateException("The Session content locale binding was replaced")
+      case _          => throw new HibernateException("The Session content locale binding was replaced")
   }
 
   def required(session: SharedSessionContractImplementor): String = session match
     case stateful: Session => stateful.synchronized {
-      stateful.getProperties.get(key) match
-        case Binding(locale) =>
-          validateInspector(session, locale)
-          locale
-        case null => throw new HibernateException("No content locale bound to the Session")
-        case _ => throw new HibernateException("The Session content locale binding was replaced")
-    }
+        stateful.getProperties.get(key) match
+          case Binding(locale) =>
+            validateInspector(session, locale)
+            locale
+          case null => throw new HibernateException("No content locale bound to the Session")
+          case _    => throw new HibernateException("The Session content locale binding was replaced")
+      }
     case _ => throw new HibernateException("A stateful Session is required for localized caching")

@@ -6,6 +6,7 @@ import org.hibernate.boot.ResourceStreamLocator
 import org.hibernate.boot.spi.{AdditionalMappingContributions, AdditionalMappingContributor, InFlightMetadataCollector, MetadataBuildingContext}
 
 import scala.jdk.CollectionConverters.*
+import java.lang.{Boolean as JavaBoolean}
 
 /** Test-only opt-in and cache policy around the inactive production metadata finalizer. */
 final class ExperimentalTranslationMetadataContributor extends AdditionalMappingContributor:
@@ -18,11 +19,11 @@ final class ExperimentalTranslationMetadataContributor extends AdditionalMapping
     buildingContext: MetadataBuildingContext
   ): Unit =
     val settings = buildingContext.getBootstrapContext.getConfigurationService.getSettings
-    def enabled(name: String): Boolean = java.lang.Boolean.parseBoolean(String.valueOf(settings.get(name)))
+    def enabled(name: String): Boolean = JavaBoolean.parseBoolean(String.valueOf(settings.get(name)))
     val unsafeCacheProbe = enabled(unsafeCacheProbeSetting)
     val localeAwareQueryRegion = settings.get("hibernate.cache.region.factory_class") match
       case _: LocaleAwareRegionFactory => true
-      case _ => false
+      case _                           => false
     TranslationMappingXml.validateInheritance(metadata.getEntityBindings.asScala.toSeq
       .filter(_.getClassName != null).map(_.getMappedClass))
     metadata.getEntityBindings.asScala.toSeq.foreach { parent =>

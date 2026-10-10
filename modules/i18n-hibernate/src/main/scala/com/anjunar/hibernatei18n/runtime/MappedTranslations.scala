@@ -7,7 +7,7 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.`type`.BasicType
 import org.hibernate.`type`.descriptor.converter.spi.BasicValueConverter
 
-import java.util.UUID
+import java.util
 
 /** Reuses the finalized Hibernate mapping, including its configured JPA AttributeConverter instances. */
 private[runtime] object MappedTranslations:
@@ -38,6 +38,6 @@ private[runtime] object MappedTranslations:
     HibernateI18n.install(
       factory,
       entityClass,
-      page => persister.getIdentifierMapping.getIdentifier(page).asInstanceOf[UUID],
+      page => persister.getIdentifierMapping.getIdentifier(page).asInstanceOf[util.UUID],
       fields
     )

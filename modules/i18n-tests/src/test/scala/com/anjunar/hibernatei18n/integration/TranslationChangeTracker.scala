@@ -4,7 +4,7 @@ import org.hibernate.HibernateException
 import org.hibernate.engine.spi.EntityEntry
 import org.hibernate.event.spi.EventSource
 
-import java.util.{IdentityHashMap, Objects, WeakHashMap}
+import java.util
 
 /** Test-only snapshot for formula fields, which Hibernate deliberately treats as read-only. */
 object TranslationChangeTracker:
@@ -13,21 +13,21 @@ object TranslationChangeTracker:
 
 final class TranslationChangeTracker[P <: AnyRef](titleOf: P => String, contentOf: P => Markdown):
   private final case class Values(title: String, content: Markdown)
-  private val snapshots = new WeakHashMap[EventSource, IdentityHashMap[P, Values]]()
+  private val snapshots = new util.WeakHashMap[EventSource, util.IdentityHashMap[P, Values]]()
 
   def changed(session: EventSource, page: P, entry: EntityEntry): TranslationChangeTracker.Changes = synchronized {
     val previous = Option(snapshots.get(session)).flatMap(values => Option(values.get(page)))
       .getOrElse(initialValues(entry))
     TranslationChangeTracker.Changes(
-      !Objects.equals(previous.title, titleOf(page)),
-      !Objects.equals(previous.content, contentOf(page))
+      !util.Objects.equals(previous.title, titleOf(page)),
+      !util.Objects.equals(previous.content, contentOf(page))
     )
   }
 
   def synchronizedValue(session: EventSource, page: P): Unit = synchronized {
     var values = snapshots.get(session)
     if values == null then
-      values = new IdentityHashMap[P, Values]()
+      values = new util.IdentityHashMap[P, Values]()
       snapshots.put(session, values)
     values.put(page, Values(titleOf(page), contentOf(page)))
   }

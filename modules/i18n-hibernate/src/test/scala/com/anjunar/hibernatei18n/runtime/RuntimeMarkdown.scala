@@ -9,7 +9,7 @@ import org.hibernate.StaleObjectStateException
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 final case class RuntimeMarkdown(source: String)

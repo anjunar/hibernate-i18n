@@ -21,8 +21,8 @@ final class LocalizedBootstrapGuard extends AdditionalMappingContributor:
         var current: Class[?] = entityClass
         while current != null && current != classOf[Object] do
           if current.isAnnotationPresent(classOf[Localized]) ||
-              current.getDeclaredFields.exists(_.isAnnotationPresent(classOf[Translation])) ||
-              current.getDeclaredMethods.exists(_.isAnnotationPresent(classOf[Translation]))
+            current.getDeclaredFields.exists(_.isAnnotationPresent(classOf[Translation])) ||
+            current.getDeclaredMethods.exists(_.isAnnotationPresent(classOf[Translation]))
           then throw unsupported(entityClass.getName)
           current = current.getSuperclass
     }

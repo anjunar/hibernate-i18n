@@ -12,7 +12,7 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -21,7 +21,6 @@ import scala.util.Using
 @StableId("a31b4c20")
 @Table(name = "development_ddl_page")
 class RuntimeDdlPage:
-  @Id @StableId("a31b4c21") var id: UUID = uninitialized
+  @Id @StableId("a31b4c21") var id: util.UUID = uninitialized
 
   @Translation @StableId("a31b4c22") var title: String = uninitialized
-

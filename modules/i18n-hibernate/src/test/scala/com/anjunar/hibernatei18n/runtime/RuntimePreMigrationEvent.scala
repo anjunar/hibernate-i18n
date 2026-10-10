@@ -13,4 +13,3 @@ import scala.util.Using
 @Table(name = "Schedule#Event")
 class RuntimePreMigrationEvent extends RuntimeTenantBase:
   @Column(name = "legacy_title") var legacyTitle: String = uninitialized
-

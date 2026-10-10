@@ -9,7 +9,7 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -17,4 +17,3 @@ import scala.util.Using
 @Localized(defaultLocale = "de")
 class RuntimeCachedChild extends RuntimeCachedRoot:
   @Translation var title: String = uninitialized
-

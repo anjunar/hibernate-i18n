@@ -6,7 +6,7 @@ import org.hibernate.event.spi.EventSource
 import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.internal.util.`type`.PrimitiveWrappers
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.reflect.ClassTag
 
@@ -15,7 +15,7 @@ final class Translations[P <: AnyRef] private[runtime] (
   factory: SessionFactory,
   entityClass: Class[P],
   translationEntity: String,
-  idOf: P => UUID,
+  idOf: P => util.UUID,
   fields: Seq[TranslationField[P, ?]]
 ):
   /** Names come from @Translation; applications do not maintain a second field inventory. */
@@ -78,7 +78,7 @@ final class Translations[P <: AnyRef] private[runtime] (
     val encoded = if value == null then null else field.encode(value)
     if row == null then
       if encoded != null then
-        val created = new HashMap[String, Object]()
+        val created = new util.HashMap[String, Object]()
         created.putAll(id)
         created.put(field.name, encoded)
         session.persist(translationEntity, created)
@@ -99,7 +99,7 @@ final class Translations[P <: AnyRef] private[runtime] (
     val activeLocale = SessionContentLocale.required(source)
     val rows = source.createQuery(
       s"from $translationEntity t where t.pageId = :pageId and t.locale <> :activeLocale order by t.locale",
-      classOf[java.util.Map[?, ?]]
+      classOf[util.Map[?, ?]]
     ).setParameter("pageId", fromId).setParameter("activeLocale", activeLocale)
       .getResultList.asScala.toVector
     rows.foreach { sourceRow =>
@@ -107,7 +107,7 @@ final class Translations[P <: AnyRef] private[runtime] (
       val id = rowId(toId, locale)
       val targetRow = ManagedTranslationRows.find(source, translationEntity, id)
       if targetRow == null then
-        val created = new HashMap[String, Object]()
+        val created = new util.HashMap[String, Object]()
         created.putAll(id)
         fields.foreach(field => created.put(field.name, sourceRow.get(field.name)))
         session.persist(translationEntity, created)
@@ -141,8 +141,8 @@ final class Translations[P <: AnyRef] private[runtime] (
     if idOf(page) == null then throw new HibernateException("Translation access requires a persistent identifier")
     source
 
-  private def rowId(pageId: UUID, locale: String): HashMap[String, Object] =
-    val id = new HashMap[String, Object]()
+  private def rowId(pageId: util.UUID, locale: String): util.HashMap[String, Object] =
+    val id = new util.HashMap[String, Object]()
     id.put("pageId", pageId)
     id.put("locale", locale)
     id

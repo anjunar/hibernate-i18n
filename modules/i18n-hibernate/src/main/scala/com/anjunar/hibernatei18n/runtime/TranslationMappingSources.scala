@@ -18,7 +18,9 @@ final class TranslationMappingSources extends MetadataSourcesContributor:
       sources.getAnnotatedClassNames.asScala.toSeq.map(loader.classForName(_))
     TranslationMappingXml.validateInheritance(entities)
     entities.distinct.filter(_.isAnnotationPresent(classOf[Localized])).foreach { entity =>
-      val xml = TranslationMappingXml.mappingFor(entity,
-        TranslationMappingXml.translationEntityName(entity))
+      val xml = TranslationMappingXml.mappingFor(
+        entity,
+        TranslationMappingXml.translationEntityName(entity)
+      )
       sources.addInputStream(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)))
     }

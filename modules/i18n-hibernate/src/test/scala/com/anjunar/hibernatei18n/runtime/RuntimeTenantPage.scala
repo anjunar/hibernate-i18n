@@ -10,7 +10,7 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
@@ -20,7 +20,6 @@ import scala.util.Using
 @SchemaId("b31b4c20")
 @Table(name = "development_tenant_page")
 class RuntimeTenantPage:
-  @Id @SchemaId("b31b4c21") var id: UUID = uninitialized
+  @Id @SchemaId("b31b4c21") var id: util.UUID = uninitialized
   @TenantId @Column(name = "tenant_id", length = 40) @SchemaId("b31b4c22") var tenantId: String = uninitialized
   @Translation @SchemaId("b31b4c23") var title: String = uninitialized
-

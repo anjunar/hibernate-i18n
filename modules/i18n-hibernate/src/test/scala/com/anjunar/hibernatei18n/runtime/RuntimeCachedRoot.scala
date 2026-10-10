@@ -9,7 +9,7 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -18,4 +18,4 @@ import scala.util.Using
 @Table(name = "development_cached_hierarchy")
 @Cache(usage = CacheConcurrencyStrategy.READ_WRITE)
 abstract class RuntimeCachedRoot:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized

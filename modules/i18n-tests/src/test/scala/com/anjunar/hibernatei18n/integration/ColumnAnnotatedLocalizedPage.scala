@@ -6,8 +6,7 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** An ordinary @Column binds a parent column and must be rejected by the overlay. */
@@ -15,5 +14,5 @@ import scala.compiletime.uninitialized
 @Localized(defaultLocale = "de")
 @Table(name = "column_translation_page")
 class ColumnAnnotatedLocalizedPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @Translation @Column(name = "display_title") var title: String = uninitialized

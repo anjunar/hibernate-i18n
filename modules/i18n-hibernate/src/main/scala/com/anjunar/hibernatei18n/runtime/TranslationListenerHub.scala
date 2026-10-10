@@ -4,9 +4,9 @@ import org.hibernate.event.spi.{AutoFlushEvent, AutoFlushEventListener, ClearEve
 
 /** One registry listener per event type, delegating to each installed entity bridge. */
 private[runtime] final class TranslationListenerHub extends FlushEventListener,
-    AutoFlushEventListener, ClearEventListener, EvictEventListener,
-    RefreshEventListener, MergeEventListener, ReplicateEventListener,
-    PostLoadEventListener, PreDeleteEventListener:
+      AutoFlushEventListener, ClearEventListener, EvictEventListener,
+      RefreshEventListener, MergeEventListener, ReplicateEventListener,
+      PostLoadEventListener, PreDeleteEventListener:
   private var synchronizers = Vector.empty[TranslationSynchronizer[?]]
   private var cascadeEvictors = Vector.empty[TranslationCascadeEvictor[?]]
 

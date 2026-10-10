@@ -9,7 +9,7 @@ import org.hibernate.StaleObjectStateException
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -19,4 +19,3 @@ class RuntimeMarkdownConverter extends AttributeConverter[RuntimeMarkdown, Strin
     if value == null then null else value.source
   override def convertToEntityAttribute(value: String): RuntimeMarkdown =
     if value == null then null else RuntimeMarkdown(value)
-

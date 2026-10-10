@@ -93,10 +93,14 @@ private[hibernatei18n] object TranslationMappingXml:
     localization: Localized
   ): String =
     formulaForSqlNames(
-      sqlTableName(translationTable), safeIdentifier(translationIdColumn),
-      safeIdentifier(translationLocaleColumn), safeIdentifier(parentIdColumn),
-      translationTenantColumn.map(safeIdentifier), parentTenantColumn.map(safeIdentifier),
-      safeIdentifier(valueColumn), localization
+      sqlTableName(translationTable),
+      safeIdentifier(translationIdColumn),
+      safeIdentifier(translationLocaleColumn),
+      safeIdentifier(parentIdColumn),
+      translationTenantColumn.map(safeIdentifier),
+      parentTenantColumn.map(safeIdentifier),
+      safeIdentifier(valueColumn),
+      localization
     )
 
   private[hibernatei18n] def formulaForPhysical(
@@ -115,8 +119,14 @@ private[hibernatei18n] object TranslationMappingXml:
     def columnName(column: MappingColumn): String =
       if column.isQuoted then column.getQuotedName(dialect) else safeIdentifier(column.getName)
     formulaForSqlNames(
-      tableName, columnName(translationId), columnName(translationLocale), columnName(parentId),
-      translationTenant.map(columnName), parentTenant.map(columnName), columnName(value), localization
+      tableName,
+      columnName(translationId),
+      columnName(translationLocale),
+      columnName(parentId),
+      translationTenant.map(columnName),
+      parentTenant.map(columnName),
+      columnName(value),
+      localization
     )
 
   private def formulaForSqlNames(
@@ -134,9 +144,10 @@ private[hibernatei18n] object TranslationMappingXml:
     val tenantPredicate = translationTenant.zip(parentTenant).map { (translation, parent) =>
       s" and t.$translation = {alias}.$parent"
     }.getOrElse("")
-    val priorities = (Seq("__hibernate_i18n_locale__", "__hibernate_i18n_language__") ++
-      Seq(localization.fallbackLocale(), localization.defaultLocale())
-        .filter(_.nonEmpty).map(safeLocale)).distinct
+    val priorities =
+      (Seq("__hibernate_i18n_locale__", "__hibernate_i18n_language__") ++
+        Seq(localization.fallbackLocale(), localization.defaultLocale())
+          .filter(_.nonEmpty).map(safeLocale)).distinct
     val selections = priorities.map { locale =>
       s"""(select t.$column from $table t where t.$translationId = {alias}.$parentId$tenantPredicate and t.$translationLocale = '$locale')"""
     }
@@ -151,7 +162,9 @@ private[hibernatei18n] object TranslationMappingXml:
     val members = LocalizedEntityMembers.inspect(entity)
     val fields = members.translations
     if fields.exists(_.annotation(classOf[Column]) != null) then
-      throw new MappingException("@Column on @Translation fields is not supported by this translation formula mapping; use @Translation(column = ...) for the translation-row column")
+      throw new MappingException(
+        "@Column on @Translation fields is not supported by this translation formula mapping; use @Translation(column = ...) for the translation-row column"
+      )
     if fields.exists(field => databaseType(field) != classOf[String]) then
       throw new MappingException("This experiment supports String database values only")
     if fields.exists(field => field.name == "rowVersion" || translatedColumnName(field) == "row_version") then
@@ -161,18 +174,29 @@ private[hibernatei18n] object TranslationMappingXml:
       throw new MappingException("The tenant column conflicts with an internal translation column")
     val translatedColumns = fields.map(translatedColumnName)
     if translatedColumns.exists(column => Set("page_id", "locale").contains(column) || tenantColumn.contains(column)) ||
-        translatedColumns.distinct.size != translatedColumns.size then
+      translatedColumns.distinct.size != translatedColumns.size
+    then
       throw new MappingException("Translation columns must be distinct from each other and internal key columns")
     val tableAnnotation = entity.getAnnotation(classOf[Table])
-    val parentTable = tableIdentifier(if tableAnnotation == null || tableAnnotation.name().isEmpty then entity.getSimpleName else tableAnnotation.name())
+    val parentTable = tableIdentifier(if tableAnnotation == null || tableAnnotation.name().isEmpty then
+      entity.getSimpleName
+    else tableAnnotation.name())
     val translationTable = tableIdentifier(parentTable + "_translation")
     val parentId = columnName(members.id)
     val localization = entity.getAnnotation(classOf[Localized])
     val access = if members.id.element.isInstanceOf[Field] then "FIELD" else "PROPERTY"
     def formula(field: LocalizedEntityMembers.Attribute): String =
       val column = translatedColumnName(field)
-      val expression = formulaFor(translationTable, "page_id", "locale", parentId,
-        tenantColumn, tenantColumn, column, localization)
+      val expression = formulaFor(
+        translationTable,
+        "page_id",
+        "locale",
+        parentId,
+        tenantColumn,
+        tenantColumn,
+        column,
+        localization
+      )
       s"""<basic name="${field.name}"><formula>$expression</formula></basic>"""
     val formulas = fields.filter(_.declaringClass == entity).map(formula).mkString("\n")
     val inheritedMappings = fields.filter(_.declaringClass != entity)

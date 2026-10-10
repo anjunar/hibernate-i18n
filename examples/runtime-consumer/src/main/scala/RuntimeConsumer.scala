@@ -3,7 +3,7 @@ import org.hibernate.SessionFactory
 import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
-import java.util.UUID
+import java.util
 import javax.sql.DataSource
 object RuntimeConsumer:
   def withFactory[A](dataSource: DataSource, schemaMode: String = "none")(
@@ -24,7 +24,7 @@ object RuntimeConsumer:
       finally factory.close()
     finally StandardServiceRegistryBuilder.destroy(registry)
 
-  def germanTitle(factory: SessionFactory, id: UUID): String =
+  def germanTitle(factory: SessionFactory, id: util.UUID): String =
     val session = HibernateI18n.openSession(factory, "de")
     try session.find(classOf[ExamplePage], id).title
     finally session.close()
@@ -32,7 +32,7 @@ object RuntimeConsumer:
   def englishTitleInGermanSession(
     factory: SessionFactory,
     translations: Translations[ExamplePage],
-    id: UUID
+    id: util.UUID
   ): Option[String] =
     val session = HibernateI18n.openSession(factory, "de")
     try
@@ -43,7 +43,7 @@ object RuntimeConsumer:
   def setEnglishTitleInGermanSession(
     factory: SessionFactory,
     translations: Translations[ExamplePage],
-    id: UUID,
+    id: util.UUID,
     title: String
   ): Unit =
     val session = HibernateI18n.openSession(factory, "de")

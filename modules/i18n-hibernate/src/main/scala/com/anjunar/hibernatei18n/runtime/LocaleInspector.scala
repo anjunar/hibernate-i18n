@@ -11,8 +11,7 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 
-import java.util.UUID
-import java.util.WeakHashMap
+import java.util
 import java.util.function.UnaryOperator
 import scala.jdk.CollectionConverters.*
 private final class LocaleInspector(locale: String) extends UnaryOperator[String]:

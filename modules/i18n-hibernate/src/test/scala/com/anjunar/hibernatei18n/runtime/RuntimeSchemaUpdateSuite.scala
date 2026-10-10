@@ -8,9 +8,13 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import java.nio.file.Files
 import scala.compiletime.uninitialized
 import scala.util.Using
-class RuntimeSchemaUpdateSuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+import org.hibernate.Session
+import java.util
+class RuntimeSchemaUpdateSuite extends FunSuite:
   test("Hibernate update adds translation rows without replacing existing Stack tables") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-update-pg-"))
@@ -19,8 +23,10 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
       val baselineRegistry = new StandardServiceRegistryBuilder()
         .applySetting("hibernate.connection.datasource", postgres.getPostgresDatabase)
         .applySetting("hibernate.hbm2ddl.auto", "create")
-        .applySetting("hibernate.physical_naming_strategy",
-          "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy")
+        .applySetting(
+          "hibernate.physical_naming_strategy",
+          "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"
+        )
         .build()
       try
         val baselineMetadata = new MetadataSources(baselineRegistry)
@@ -31,7 +37,7 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
           val event = new RuntimePreMigrationEvent()
           event.legacyTitle = "Alter Titel"
           val legacy = new RuntimeStackEventTranslation()
-          legacy.id = java.util.UUID.randomUUID()
+          legacy.id = util.UUID.randomUUID()
           legacy.locale = "de"
           legacy.title = "Legacy-Termin"
           Using.resource(baselineFactory.withOptions().tenantIdentifier("tenant-a").openSession()) { session =>
@@ -44,8 +50,10 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
           val registry = HibernateI18n.registryBuilder()
             .applySetting("hibernate.connection.datasource", postgres.getPostgresDatabase)
             .applySetting("hibernate.hbm2ddl.auto", "update")
-            .applySetting("hibernate.physical_naming_strategy",
-              "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy")
+            .applySetting(
+              "hibernate.physical_naming_strategy",
+              "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"
+            )
             .applySetting("hibernate.cache.use_query_cache", "false")
             .build()
           try
@@ -54,9 +62,13 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
               .addAnnotatedClassName(classOf[RuntimeStackEventTranslation].getName)
               .buildMetadata()
             Using.resource(metadata.buildSessionFactory()) { factory =>
-              HibernateI18n.install(factory, classOf[RuntimeStackEvent], _.id,
-                Seq(TranslationField.string[RuntimeStackEvent]("title", _.title)))
-              def inLocale(locale: String)(body: org.hibernate.Session => Unit): Unit =
+              HibernateI18n.install(
+                factory,
+                classOf[RuntimeStackEvent],
+                _.id,
+                Seq(TranslationField.string[RuntimeStackEvent]("title", _.title))
+              )
+              def inLocale(locale: String)(body: Session => Unit): Unit =
                 Using.resource(HibernateI18n.openSession(factory, locale, "tenant-a")) { session =>
                   val tx = session.beginTransaction()
                   try
@@ -71,8 +83,10 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
                 val page = session.find(classOf[RuntimeStackEvent], event.id)
                 assertEquals(page.title, null)
                 page.title = "Termin"
-                assertEquals(session.find(classOf[RuntimeStackEventTranslation], legacy.id).title,
-                  "Legacy-Termin")
+                assertEquals(
+                  session.find(classOf[RuntimeStackEventTranslation], legacy.id).title,
+                  "Legacy-Termin"
+                )
               }
               inLocale("en") { session =>
                 val page = session.find(classOf[RuntimeStackEvent], event.id)
@@ -83,8 +97,10 @@ class RuntimeSchemaUpdateSuite extends munit.FunSuite:
                 assertEquals(session.find(classOf[RuntimeStackEvent], event.id).title, "Termin")
               }
               Using.resource(baselineFactory.withOptions().tenantIdentifier("tenant-a").openSession()) { session =>
-                assertEquals(session.find(classOf[RuntimePreMigrationEvent], event.id).legacyTitle,
-                  "Alter Titel")
+                assertEquals(
+                  session.find(classOf[RuntimePreMigrationEvent], event.id).legacyTitle,
+                  "Alter Titel"
+                )
               }
             }
           finally StandardServiceRegistryBuilder.destroy(registry)

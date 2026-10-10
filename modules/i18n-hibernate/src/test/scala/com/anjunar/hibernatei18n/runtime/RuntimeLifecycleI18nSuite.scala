@@ -7,13 +7,15 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.HashMap
-import java.util.UUID
+import java.util
 import scala.util.Using
+import com.anjunar.hibernatei18n.boot.TranslationMappingXml
+import java.nio.file.Path
+import munit.FunSuite
 
-class RuntimeLifecycleI18nSuite extends munit.FunSuite:
+class RuntimeLifecycleI18nSuite extends FunSuite:
   test("refresh, clear and evict preserve locale state and reject dirty row refresh") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-lifecycle-pg-"))
@@ -29,9 +31,13 @@ class RuntimeLifecycleI18nSuite extends munit.FunSuite:
         Using.resource(new MetadataSources(registry)
           .addAnnotatedClassName(classOf[RuntimeSecondaryPage].getName)
           .buildMetadata().buildSessionFactory()) { factory =>
-          HibernateI18n.install(factory, classOf[RuntimeSecondaryPage], _.id,
-            Seq(TranslationField.string[RuntimeSecondaryPage]("title", _.title)))
-          val id = UUID.randomUUID()
+          HibernateI18n.install(
+            factory,
+            classOf[RuntimeSecondaryPage],
+            _.id,
+            Seq(TranslationField.string[RuntimeSecondaryPage]("title", _.title))
+          )
+          val id = util.UUID.randomUUID()
           def inGerman[A](body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, "de")) { session =>
               val transaction = session.beginTransaction()
@@ -59,8 +65,10 @@ class RuntimeLifecycleI18nSuite extends munit.FunSuite:
             page.title = "Nach Refresh"
           }
           inGerman { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], id).title,
-              "Nach Refresh")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], id).title,
+              "Nach Refresh"
+            )
           }
           inGerman { session =>
             val old = session.find(classOf[RuntimeSecondaryPage], id)
@@ -75,12 +83,16 @@ class RuntimeLifecycleI18nSuite extends munit.FunSuite:
             session.evict(old)
             assert(!session.contains(old))
             inGerman(_.find(classOf[RuntimeSecondaryPage], id).title = "Nach Evict")
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], id).title,
-              "Nach Evict")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], id).title,
+              "Nach Evict"
+            )
           }
           inGerman { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], id).title,
-              "Nach Evict")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], id).title,
+              "Nach Evict"
+            )
           }
           Using.resource(HibernateI18n.openSession(factory, "en")) { session =>
             val transaction = session.beginTransaction()
@@ -99,20 +111,25 @@ class RuntimeLifecycleI18nSuite extends munit.FunSuite:
                 throw error
           }
           inGerman { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], id).title,
-              "Neuer Fallback")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], id).title,
+              "Neuer Fallback"
+            )
           }
           Using.resource(HibernateI18n.openSession(factory, "de")) { session =>
             val transaction = session.beginTransaction()
             try
               val page = session.find(classOf[RuntimeSecondaryPage], id)
-              val rowId = new HashMap[String, Object]()
+              val rowId = new util.HashMap[String, Object]()
               rowId.put("pageId", id)
               rowId.put("locale", "de")
               val row = session.find(
-                com.anjunar.hibernatei18n.boot.TranslationMappingXml.translationEntityName(
-                  classOf[RuntimeSecondaryPage]), rowId)
-                .asInstanceOf[java.util.Map[String, Object]]
+                TranslationMappingXml.translationEntityName(
+                  classOf[RuntimeSecondaryPage]
+                ),
+                rowId
+              )
+                .asInstanceOf[util.Map[String, Object]]
               row.put("title", "Unsaved editor change")
               val error = intercept[HibernateException](session.refresh(page))
               assert(error.getMessage.contains("modified translation row"))
@@ -120,8 +137,10 @@ class RuntimeLifecycleI18nSuite extends munit.FunSuite:
               transaction.rollback()
           }
           inGerman { session =>
-            assertEquals(session.find(classOf[RuntimeSecondaryPage], id).title,
-              "Neuer Fallback")
+            assertEquals(
+              session.find(classOf[RuntimeSecondaryPage], id).title,
+              "Neuer Fallback"
+            )
           }
         }
       finally StandardServiceRegistryBuilder.destroy(registry)

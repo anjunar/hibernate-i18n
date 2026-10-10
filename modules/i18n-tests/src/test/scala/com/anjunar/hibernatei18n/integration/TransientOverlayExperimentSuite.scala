@@ -5,7 +5,7 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
-import java.util.UUID
+import java.util
 import scala.util.Using
 
 /** Demonstrates why excluding a field at bootstrap does not meet transparent dirty checking. */
@@ -32,7 +32,7 @@ class TransientOverlayExperimentSuite extends TestPostgres:
         assert(!parent.getTable.getColumns.stream().anyMatch(_.getName == "title"))
 
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           factory.inTransaction { session =>
             val page = new OverlayPage()
             page.id = id

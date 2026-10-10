@@ -5,17 +5,18 @@ import org.hibernate.{HibernateException, Session}
 import org.hibernate.engine.spi.Status
 import org.hibernate.event.spi.{AutoFlushEvent, AutoFlushEventListener, ClearEvent, ClearEventListener, EventSource, EvictEvent, EvictEventListener, FlushEvent, FlushEventListener, MergeContext, MergeEvent, MergeEventListener, PostLoadEvent, PostLoadEventListener, RefreshContext, RefreshEvent, RefreshEventListener, ReplicateEvent, ReplicateEventListener}
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.collection.mutable
 
 /** Test-only bridge between ordinary fields and a classless translation entity. */
 final class MapTranslationSynchronizer[P <: AnyRef](
   entityClass: Class[P],
   translationEntity: String,
-  idOf: P => UUID,
+  idOf: P => util.UUID,
   titleOf: P => String,
   contentOf: P => Markdown
-) extends FlushEventListener, AutoFlushEventListener, ClearEventListener, EvictEventListener, RefreshEventListener, MergeEventListener, ReplicateEventListener, PostLoadEventListener:
+) extends FlushEventListener, AutoFlushEventListener, ClearEventListener, EvictEventListener, RefreshEventListener,
+      MergeEventListener, ReplicateEventListener, PostLoadEventListener:
   private val active = mutable.Set.empty[Session]
   private val changes = new TranslationChangeTracker[P](titleOf, contentOf)
 
@@ -40,14 +41,16 @@ final class MapTranslationSynchronizer[P <: AnyRef](
   override def onReplicate(event: ReplicateEvent): Unit =
     if entityClass.isInstance(event.getObject) then
       SessionContentLocale.required(event.getSession)
-      throw new HibernateException("Cannot replicate a localized entity; load it in the target content locale and edit the managed instance")
+      throw new HibernateException(
+        "Cannot replicate a localized entity; load it in the target content locale and edit the managed instance"
+      )
 
   override def onPostLoad(event: PostLoadEvent): Unit =
     if entityClass.isInstance(event.getEntity) then
       val session = event.getSession
       val locale = SessionContentLocale.required(session)
       val page = entityClass.cast(event.getEntity)
-      val id = new HashMap[String, Object]()
+      val id = new util.HashMap[String, Object]()
       id.put("pageId", idOf(page))
       id.put("locale", locale)
       ManagedTranslationRows.find(session, translationEntity, id)
@@ -58,14 +61,16 @@ final class MapTranslationSynchronizer[P <: AnyRef](
       SessionContentLocale.required(session)
       if !session.contains(event.getOriginal) then
         // A copied formula value may be from another locale or an obsolete fallback row.
-        throw new HibernateException("Cannot merge an unmanaged localized entity; load it in the target content locale and edit the managed instance, or persist a new entity")
+        throw new HibernateException(
+          "Cannot merge an unmanaged localized entity; load it in the target content locale and edit the managed instance, or persist a new entity"
+        )
 
   private def refreshed(event: RefreshEvent): Unit =
     if entityClass.isInstance(event.getObject) then
       val session = event.getSession
       val page = entityClass.cast(event.getObject)
       val locale = SessionContentLocale.required(session)
-      val id = new HashMap[String, Object]()
+      val id = new util.HashMap[String, Object]()
       id.put("pageId", idOf(page))
       id.put("locale", locale)
       val persistenceContext = session.getPersistenceContextInternal
@@ -100,21 +105,24 @@ final class MapTranslationSynchronizer[P <: AnyRef](
       pages.foreach { (page, entry) =>
         val changed = changes.changed(session, page, entry)
         if idOf(page) != null && changed.any then
-          val id = new HashMap[String, Object]()
+          val id = new util.HashMap[String, Object]()
           id.put("pageId", idOf(page))
           id.put("locale", locale)
-          val translation = if entry.isExistsInDatabase then ManagedTranslationRows.find(session, translationEntity, id) else null
+          val translation =
+            if entry.isExistsInDatabase then ManagedTranslationRows.find(session, translationEntity, id) else null
           if translation == null then
             if (changed.title && titleOf(page) != null) || (changed.content && contentOf(page) != null) then
-              val created = new HashMap[String, Object]()
+              val created = new util.HashMap[String, Object]()
               created.putAll(id)
               if changed.title then created.put("title", titleOf(page))
-              if changed.content then created.put("content", if contentOf(page) == null then null else contentOf(page).source)
+              if changed.content then
+                created.put("content", if contentOf(page) == null then null else contentOf(page).source)
               session.persist(translationEntity, created)
           else
             rejectOverlappingEditorChanges(session, translation, changed)
             if changed.title then translation.put("title", titleOf(page))
-            if changed.content then translation.put("content", if contentOf(page) == null then null else contentOf(page).source)
+            if changed.content then
+              translation.put("content", if contentOf(page) == null then null else contentOf(page).source)
             if translation.get("title") == null && translation.get("content") == null then
               session.remove(translation)
           changes.synchronizedValue(session, page)
@@ -123,7 +131,7 @@ final class MapTranslationSynchronizer[P <: AnyRef](
 
   private def rejectOverlappingEditorChanges(
     session: EventSource,
-    translation: java.util.Map[String, Object],
+    translation: util.Map[String, Object],
     changed: TranslationChangeTracker.Changes
   ): Unit =
     val entry = session.getPersistenceContextInternal.getEntry(translation)

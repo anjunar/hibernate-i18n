@@ -9,10 +9,13 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
-class RuntimeCacheGuardSuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+import org.hibernate.Session
+class RuntimeCacheGuardSuite extends FunSuite:
   private def rejected(entity: Class[?], queryCache: Boolean, sharedCacheMode: String = "UNSPECIFIED"): String =
     val registry = HibernateI18n.registryBuilder()
       .applySetting("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect")
@@ -76,7 +79,7 @@ class RuntimeCacheGuardSuite extends munit.FunSuite:
   }
 
   test("a cacheable localized entity stays locale-correct while ordinary entity caching works") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-cache-pg-"))
@@ -85,8 +88,10 @@ class RuntimeCacheGuardSuite extends munit.FunSuite:
       val registry = HibernateI18n.registryBuilder()
         .applySetting("hibernate.connection.datasource", postgres.getPostgresDatabase)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-        .applySetting("hibernate.cache.region.factory_class",
-          classOf[RuntimeInMemoryCacheRegionFactory].getName)
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          classOf[RuntimeInMemoryCacheRegionFactory].getName
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "false")
         .applySetting("hibernate.generate_statistics", "true")
@@ -99,11 +104,15 @@ class RuntimeCacheGuardSuite extends munit.FunSuite:
         assert(!metadata.getEntityBinding(classOf[RuntimeCachedPage].getName).isCached)
         assert(metadata.getEntityBinding(classOf[RuntimePlainCachedPage].getName).isCached)
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          HibernateI18n.install(factory, classOf[RuntimeCachedPage], _.id,
-            Seq(TranslationField.string[RuntimeCachedPage]("title", _.title)))
-          val id = UUID.randomUUID()
-          val plainId = UUID.randomUUID()
-          def inLocale[A](locale: String)(body: org.hibernate.Session => A): A =
+          HibernateI18n.install(
+            factory,
+            classOf[RuntimeCachedPage],
+            _.id,
+            Seq(TranslationField.string[RuntimeCachedPage]("title", _.title))
+          )
+          val id = util.UUID.randomUUID()
+          val plainId = util.UUID.randomUUID()
+          def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
               val transaction = session.beginTransaction()
               try
@@ -127,8 +136,10 @@ class RuntimeCacheGuardSuite extends munit.FunSuite:
           }
           inLocale("de") { session =>
             assertEquals(session.find(classOf[RuntimeCachedPage], id).title, "Hallo")
-            assertEquals(session.find(classOf[RuntimePlainCachedPage], plainId).title,
-              "Cached plain")
+            assertEquals(
+              session.find(classOf[RuntimePlainCachedPage], plainId).title,
+              "Cached plain"
+            )
           }
           assert(!factory.getCache.containsEntity(classOf[RuntimeCachedPage], id))
           assert(factory.getCache.containsEntity(classOf[RuntimePlainCachedPage], plainId))

@@ -11,7 +11,7 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.mapping.Column
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -19,7 +19,6 @@ import scala.util.Using
 @SchemaId("d31b4c30")
 @Table(name = "Schedule#Event#Translation")
 class RuntimeStackEventTranslation:
-  @Id @SchemaId("d31b4c31") var id: UUID = uninitialized
+  @Id @SchemaId("d31b4c31") var id: util.UUID = uninitialized
   @SchemaId("d31b4c32") var locale: String = uninitialized
   @SchemaId("d31b4c33") var title: String = uninitialized
-

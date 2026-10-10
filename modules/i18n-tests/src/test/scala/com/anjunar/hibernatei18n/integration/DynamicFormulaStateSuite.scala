@@ -11,23 +11,28 @@ import org.hibernate.mapping.Column
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
-import java.util.{HashMap, UUID}
+import java.util
 import scala.util.Using
 
 /** End-to-end probe without a handwritten translation entity class. */
 class DynamicFormulaStateSuite extends TestPostgres:
-  private def inLocaleTransaction[A](factory: SessionFactory, locale: String, synchronizer: MapTranslationSynchronizer[FormulaPage])(body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      synchronizer.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+  private def inLocaleTransaction[A](
+    factory: SessionFactory,
+    locale: String,
+    synchronizer: MapTranslationSynchronizer[FormulaPage]
+  )(body: Session => A): A =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        synchronizer.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   test("classless translation mapping preserves ordinary domain fields across locales and flushes") {
@@ -67,14 +72,22 @@ class DynamicFormulaStateSuite extends TestPostgres:
         val parentTable = metadata.getEntityBinding(classOf[FormulaPage].getName).getTable
         val pageIdColumn = binding.getTable.getColumn(new Column("page_id"))
         val foreignKey = binding.getTable.createForeignKey(
-          "fk_formula_translation_page", java.util.List.of(pageIdColumn),
-          classOf[FormulaPage].getName, null, null, null
+          "fk_formula_translation_page",
+          util.List.of(pageIdColumn),
+          classOf[FormulaPage].getName,
+          null,
+          null,
+          null
         )
         foreignKey.setReferencedTable(parentTable)
         foreignKey.setOnDeleteAction(OnDeleteAction.CASCADE)
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val synchronizer = new MapTranslationSynchronizer[FormulaPage](
-            classOf[FormulaPage], "DynamicFormulaTranslation", _.id, _.title, _.content
+            classOf[FormulaPage],
+            "DynamicFormulaTranslation",
+            _.id,
+            _.title,
+            _.content
           )
           val listenerRegistry = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
@@ -83,14 +96,14 @@ class DynamicFormulaStateSuite extends TestPostgres:
           listenerRegistry.appendListeners(EventType.REFRESH, synchronizer)
           listenerRegistry.prependListeners(EventType.MERGE, synchronizer)
           listenerRegistry.appendListeners(EventType.POST_LOAD, synchronizer)
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = new FormulaPage()
             page.id = id
             page.slug = "dynamic-formula"
             session.persist(page)
             for (locale, title, content) <- List(("de", "Hallo", "**Deutsch**"), ("en", "Hello", "**English**")) do
-              val translation = new HashMap[String, Object]()
+              val translation = new util.HashMap[String, Object]()
               translation.put("pageId", id)
               translation.put("locale", locale)
               translation.put("title", title)
@@ -104,17 +117,20 @@ class DynamicFormulaStateSuite extends TestPostgres:
             assertEquals(page.content, Markdown("**Deutsch**"))
             page.title = "Guten Tag"
             page.content = Markdown("**Aktuell**")
-            val found = session.createQuery("select p from FormulaPage p where p.title = :title and p.content = :content", classOf[FormulaPage])
+            val found = session.createQuery(
+              "select p from FormulaPage p where p.title = :title and p.content = :content",
+              classOf[FormulaPage]
+            )
               .setParameter("title", "Guten Tag")
               .setParameter("content", Markdown("**Aktuell**"))
               .getSingleResult
             assert(found eq page)
             session.flush()
-            val translationId = new HashMap[String, Object]()
+            val translationId = new util.HashMap[String, Object]()
             translationId.put("pageId", id)
             translationId.put("locale", "de")
             val translation = session.find("DynamicFormulaTranslation", translationId)
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             translation.put("title", "Redaktion")
             session.flush()
             assertEquals(page.title, "Guten Tag")
@@ -124,12 +140,18 @@ class DynamicFormulaStateSuite extends TestPostgres:
             assertEquals(page.title, "Hello")
             assertEquals(page.content, Markdown("**English**"))
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
-          assertEquals(scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'de'"), "**Aktuell**")
+          assertEquals(
+            scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "**Aktuell**"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             assertEquals(session.find(classOf[FormulaPage], id).title, "Redaktion")
           }
-          val insertedId = UUID.randomUUID()
+          val insertedId = util.UUID.randomUUID()
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = new FormulaPage()
             page.id = insertedId
@@ -137,7 +159,13 @@ class DynamicFormulaStateSuite extends TestPostgres:
             page.title = "Neu"
             session.persist(page)
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$insertedId' and locale = 'de'"), "Neu")
+          assertEquals(
+            scalar(
+              dataSource,
+              s"select title from formula_page_translation where page_id = '$insertedId' and locale = 'de'"
+            ),
+            "Neu"
+          )
           intercept[IllegalStateException] {
             inLocaleTransaction(factory, "de", synchronizer) { session =>
               session.find(classOf[FormulaPage], id).title = "Zurückgerollt"
@@ -145,11 +173,17 @@ class DynamicFormulaStateSuite extends TestPostgres:
               throw new IllegalStateException("rollback probe")
             }
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.remove(session.find(classOf[FormulaPage], insertedId))
           }
-          assertEquals(scalar(dataSource, s"select count(*) from formula_page_translation where page_id = '$insertedId'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from formula_page_translation where page_id = '$insertedId'"),
+            "0"
+          )
         }
       finally StandardServiceRegistryBuilder.destroy(registry)
     }

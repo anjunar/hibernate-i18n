@@ -9,12 +9,15 @@ import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 import org.hibernate.mapping.Column
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
-class RuntimeGetterI18nSuite extends munit.FunSuite:
+import com.anjunar.hibernatei18n.boot.TranslationMappingXml
+import java.nio.file.Path
+import munit.FunSuite
+class RuntimeGetterI18nSuite extends FunSuite:
   test("runtime bootstrap preserves getter property types and editor access") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-getter-pg-"))
@@ -36,7 +39,7 @@ class RuntimeGetterI18nSuite extends munit.FunSuite:
           null
         )
         assert(metadata.getEntityBinding(
-          com.anjunar.hibernatei18n.boot.TranslationMappingXml.translationEntityName(
+          TranslationMappingXml.translationEntityName(
             classOf[RuntimeGetterPage]
           )
         )
@@ -45,7 +48,7 @@ class RuntimeGetterI18nSuite extends munit.FunSuite:
           val translations = HibernateI18n.translations(factory, classOf[RuntimeGetterPage])
           val titleField = translations.field[String]("title")
           val contentField = translations.field[RuntimeMarkdown]("content")
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           def inLocale[A](locale: String)(body: Session => A): A =
             Using.resource(HibernateI18n.openSession(factory, locale)) { session =>
               val transaction = session.beginTransaction()
@@ -74,7 +77,7 @@ class RuntimeGetterI18nSuite extends munit.FunSuite:
             translations.setActive(session, page, "content", null)
             assertEquals(page.getContent, null)
             translations.setActive(session, page, "content", RuntimeMarkdown("**Deutsch**"))
-            intercept[IllegalArgumentException](translations.setActive(session, page, "id", UUID.randomUUID()))
+            intercept[IllegalArgumentException](translations.setActive(session, page, "id", util.UUID.randomUUID()))
             intercept[IllegalArgumentException](translations.setActive(session, page, "content", "Wrong type"))
             assertEquals(
               session.createQuery(

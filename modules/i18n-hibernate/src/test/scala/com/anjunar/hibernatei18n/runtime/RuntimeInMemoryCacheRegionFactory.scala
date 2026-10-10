@@ -6,6 +6,7 @@ import org.hibernate.cache.spi.support.{DomainDataStorageAccess, RegionFactoryTe
 import org.hibernate.engine.spi.{SessionFactoryImplementor, SharedSessionContractImplementor}
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util
 
 /** Test-only region that actually stores entries, so locale cache leaks are observable. */
 final class RuntimeInMemoryCacheRegionFactory extends RegionFactoryTemplate:
@@ -13,7 +14,7 @@ final class RuntimeInMemoryCacheRegionFactory extends RegionFactoryTemplate:
 
   override protected def prepareForUse(
     settings: SessionFactoryOptions,
-    configValues: java.util.Map[String, Object]
+    configValues: util.Map[String, Object]
   ): Unit = ()
 
   override protected def releaseFromUse(): Unit = regions.clear()

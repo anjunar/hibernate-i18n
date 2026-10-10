@@ -1,4 +1,6 @@
 import sbt.url
+import java.util.zip.ZipFile
+import scala.io.Source
 
 // sbt 2 applies bare settings to every subproject, including the root.
 version := "1.1.0"
@@ -39,7 +41,8 @@ publishTo := {
 exportJars := false
 
 lazy val hibernateVersion = "7.4.10.Final"
-lazy val verifyRuntimeJar = taskKey[Unit]("Verify the production translation API, bootstrap guard and schema provider in the published JAR")
+lazy val verifyRuntimeJar =
+  taskKey[Unit]("Verify the production translation API, bootstrap guard and schema provider in the published JAR")
 
 lazy val root = (project in file("."))
   .aggregate(i18nCore, i18nHibernate, i18nTests)
@@ -70,14 +73,14 @@ lazy val i18nHibernate = (project in file("modules/i18n-hibernate"))
     Test / parallelExecution := false,
     verifyRuntimeJar := Def.uncached {
       val jar = (Compile / packageBin).value
-      val archive = new java.util.zip.ZipFile(fileConverter.value.toPath(jar).toFile)
+      val archive = new ZipFile(fileConverter.value.toPath(jar).toFile)
       try {
         val guardService = "META-INF/services/org.hibernate.boot.spi.AdditionalMappingContributor"
         val descriptor = archive.getEntry(guardService)
         if (descriptor == null) sys.error(s"Missing $guardService in $jar")
         val stream = archive.getInputStream(descriptor)
         val providers = try {
-          scala.io.Source.fromInputStream(stream, "UTF-8").getLines()
+          Source.fromInputStream(stream, "UTF-8").getLines()
             .map(_.takeWhile(_ != '#').trim).filter(_.nonEmpty).toList
         } finally stream.close()
         if (providers != List("com.anjunar.hibernatei18n.boot.LocalizedBootstrapGuard"))

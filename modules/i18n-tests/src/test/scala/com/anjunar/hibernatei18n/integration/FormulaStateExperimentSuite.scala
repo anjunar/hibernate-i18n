@@ -11,23 +11,28 @@ import org.hibernate.event.spi.EventType
 
 import java.io.ByteArrayInputStream
 import java.nio.charset.StandardCharsets
-import java.util.UUID
+import java.util
 import scala.util.Using
 
 /** Measures what Hibernate actually tracks for a formula-backed translated property. */
 class FormulaStateExperimentSuite extends TestPostgres:
-  private def inLocaleTransaction[A](factory: SessionFactory, locale: String, synchronizer: FormulaTranslationSynchronizer)(body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      synchronizer.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+  private def inLocaleTransaction[A](
+    factory: SessionFactory,
+    locale: String,
+    synchronizer: FormulaTranslationSynchronizer
+  )(body: Session => A): A =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        synchronizer.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   test("a formula reads localized state while Hibernate manages translation rows") {
@@ -64,7 +69,7 @@ class FormulaStateExperimentSuite extends TestPostgres:
           factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
             .prependListeners(EventType.AUTO_FLUSH, synchronizer)
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           factory.inTransaction { session =>
             val page = new FormulaPage()
             page.id = id
@@ -102,21 +107,24 @@ class FormulaStateExperimentSuite extends TestPostgres:
             assert(titleIndex >= 0)
             assertEquals(entry.getLoadedState.apply(titleIndex), "Hallo")
             assertEquals(persister.getPropertyUpdateability()(titleIndex), false)
-            val queried = session.createQuery("select p from FormulaPage p where p.title = :title", classOf[FormulaPage])
-              .setParameter("title", "Hallo")
-              .getSingleResult
+            val queried =
+              session.createQuery("select p from FormulaPage p where p.title = :title", classOf[FormulaPage])
+                .setParameter("title", "Hallo")
+                .getSingleResult
             assert(queried eq page)
             page.title = "Guten Tag"
             val dirty = persister.findDirty(persister.getValues(page), entry.getLoadedState, page, internal)
             assert(dirty == null || !dirty.contains(titleIndex))
-            val afterChange = session.createQuery("select p from FormulaPage p where p.title = :title", classOf[FormulaPage])
-              .setParameter("title", "Guten Tag")
-              .getResultList
+            val afterChange =
+              session.createQuery("select p from FormulaPage p where p.title = :title", classOf[FormulaPage])
+                .setParameter("title", "Guten Tag")
+                .getResultList
             assertEquals(afterChange.size(), 1)
             page.content = Markdown("**Aktuell**")
-            val byContent = session.createQuery("select p from FormulaPage p where p.content = :content", classOf[FormulaPage])
-              .setParameter("content", Markdown("**Aktuell**"))
-              .getSingleResult
+            val byContent =
+              session.createQuery("select p from FormulaPage p where p.content = :content", classOf[FormulaPage])
+                .setParameter("content", Markdown("**Aktuell**"))
+                .getSingleResult
             assert(byContent eq page)
             session.flush()
             assertEquals(page.title, "Guten Tag")
@@ -131,15 +139,27 @@ class FormulaStateExperimentSuite extends TestPostgres:
             assertEquals(session.find(classOf[FormulaPage], id).title, "Hello")
             assertEquals(session.find(classOf[FormulaPage], id).content, new Markdown("**English**"))
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
-          assertEquals(scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'de'"), "**Aktuell**")
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'en'"), "Hello")
-          assertEquals(scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'en'"), "**English**")
+          assertEquals(
+            scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "**Aktuell**"
+          )
+          assertEquals(
+            scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'en'"),
+            "Hello"
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from formula_page_translation where page_id = '$id' and locale = 'en'"),
+            "**English**"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             assertEquals(session.find(classOf[FormulaPage], id).title, "Redaktion")
           }
 
-          val insertedId = UUID.randomUUID()
+          val insertedId = util.UUID.randomUUID()
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = new FormulaPage()
             page.id = insertedId
@@ -147,7 +167,13 @@ class FormulaStateExperimentSuite extends TestPostgres:
             page.title = "Neu"
             session.persist(page)
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$insertedId' and locale = 'de'"), "Neu")
+          assertEquals(
+            scalar(
+              dataSource,
+              s"select title from formula_page_translation where page_id = '$insertedId' and locale = 'de'"
+            ),
+            "Neu"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             assertEquals(session.find(classOf[FormulaPage], insertedId).title, "Neu")
           }
@@ -159,11 +185,17 @@ class FormulaStateExperimentSuite extends TestPostgres:
               throw new IllegalStateException("rollback probe")
             }
           }
-          assertEquals(scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from formula_page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.remove(session.find(classOf[FormulaPage], insertedId))
           }
-          assertEquals(scalar(dataSource, s"select count(*) from formula_page_translation where page_id = '$insertedId'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from formula_page_translation where page_id = '$insertedId'"),
+            "0"
+          )
         }
       finally StandardServiceRegistryBuilder.destroy(registry)
     }

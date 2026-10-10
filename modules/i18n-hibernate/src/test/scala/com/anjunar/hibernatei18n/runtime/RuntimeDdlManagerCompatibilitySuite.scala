@@ -12,12 +12,15 @@ import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
-class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
+import java.nio.file.Path
+import munit.FunSuite
+import org.hibernate.boot.registry.StandardServiceRegistry
+class RuntimeDdlManagerCompatibilitySuite extends FunSuite:
   test("generated translation rows are part of the DDL manager model and migrate on both starts") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-ddl-pg-"))
@@ -34,12 +37,16 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeDdlPage].getName)
           .buildMetadata()
         val desired = HibernateSchemaSource.read(metadata).toOption.get
-        assertEquals(desired.tables.map(_.name.name.value).toSet,
-          Set("development_ddl_page", "development_ddl_page_translation"))
+        assertEquals(
+          desired.tables.map(_.name.name.value).toSet,
+          Set("development_ddl_page", "development_ddl_page_translation")
+        )
         val translation = desired.tables.find(_.id == SchemaId("a31b4c20/translation")).get
         assertEquals(translation.columns.find(_.name.value == "title").map(_.dataType), Some(SqlType.Text))
-        assertEquals(translation.columns.find(_.name.value == "title").map(_.id),
-          Some(SchemaId("a31b4c20/translation/a31b4c22")))
+        assertEquals(
+          translation.columns.find(_.name.value == "title").map(_.id),
+          Some(SchemaId("a31b4c20/translation/a31b4c22"))
+        )
         assertEquals(translation.foreignKeys.size, 1)
         assert(translation.foreignKeys.head.onDeleteCascade)
         HibernateSchemaMigration.migrate(metadata, dataSource)
@@ -48,7 +55,8 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           Using.resource(connection.createStatement()) { statement =>
             Using.resource(statement.executeQuery(
               "select count(*) from information_schema.tables " +
-                "where table_schema = 'public' and table_name = 'development_ddl_page_translation'")) { rows =>
+                "where table_schema = 'public' and table_name = 'development_ddl_page_translation'"
+            )) { rows =>
               assert(rows.next())
               assertEquals(rows.getInt(1), 1)
             }
@@ -59,7 +67,7 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
   }
 
   test("tenant-scoped translation foreign key references the parent's unique key") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-tenant-ddl-pg-"))
@@ -91,7 +99,7 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
   }
 
   test("an existing Hibernate-created translation table with data is adopted without rewriting it") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-adopt-pg-"))
@@ -110,28 +118,32 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           .buildMetadata()
         Using.resource(oldMetadata.buildSessionFactory()) { _ => () }
       finally StandardServiceRegistryBuilder.destroy(oldRegistry)
-      val id = UUID.randomUUID()
-      val tenantPageId = UUID.randomUUID()
+      val id = util.UUID.randomUUID()
+      val tenantPageId = util.UUID.randomUUID()
       Using.resource(dataSource.getConnection) { connection =>
         Using.resource(connection.prepareStatement(
-          "insert into public.development_ddl_page(id) values (?)")) { statement =>
+          "insert into public.development_ddl_page(id) values (?)"
+        )) { statement =>
           statement.setObject(1, id)
           assertEquals(statement.executeUpdate(), 1)
         }
         Using.resource(connection.prepareStatement(
           "insert into public.development_ddl_page_translation(page_id, locale, title, row_version) " +
-            "values (?, 'de', 'Bestehend', 0)")) { statement =>
+            "values (?, 'de', 'Bestehend', 0)"
+        )) { statement =>
           statement.setObject(1, id)
           assertEquals(statement.executeUpdate(), 1)
         }
         Using.resource(connection.prepareStatement(
-          "insert into public.development_tenant_page(id, tenant_id) values (?, 'tenant-a')")) { statement =>
+          "insert into public.development_tenant_page(id, tenant_id) values (?, 'tenant-a')"
+        )) { statement =>
           statement.setObject(1, tenantPageId)
           assertEquals(statement.executeUpdate(), 1)
         }
         Using.resource(connection.prepareStatement(
           "insert into public.development_tenant_page_translation(page_id, locale, tenant_id, title, row_version) " +
-            "values (?, 'de', 'tenant-a', 'Mandant', 0)")) { statement =>
+            "values (?, 'de', 'tenant-a', 'Mandant', 0)"
+        )) { statement =>
           statement.setObject(1, tenantPageId)
           assertEquals(statement.executeUpdate(), 1)
         }
@@ -153,14 +165,18 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           .addAnnotatedClassName(classOf[RuntimeTenantPage].getName)
           .buildMetadata()
         assertEquals(TranslationSchemaUpgrade.widenTextColumns(metadata, dataSource), 2)
-        val adopted = HibernateSchemaMigration.migrate(metadata, dataSource,
-          ExecutionOptions(adoptExistingSchema = true))
+        val adopted = HibernateSchemaMigration.migrate(
+          metadata,
+          dataSource,
+          ExecutionOptions(adoptExistingSchema = true)
+        )
         assertEquals(adopted.status, MigrationStatus.Adopted)
         val unchanged = HibernateSchemaMigration.migrate(metadata, dataSource)
         assertEquals(unchanged.status, MigrationStatus.AlreadyApplied)
         Using.resource(dataSource.getConnection) { connection =>
           Using.resource(connection.prepareStatement(
-            "select title from public.development_ddl_page_translation where page_id = ? and locale = 'de'")) { statement =>
+            "select title from public.development_ddl_page_translation where page_id = ? and locale = 'de'"
+          )) { statement =>
             statement.setObject(1, id)
             Using.resource(statement.executeQuery()) { rows =>
               assert(rows.next())
@@ -169,7 +185,8 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           }
           Using.resource(connection.prepareStatement(
             "select title from public.development_tenant_page_translation " +
-              "where page_id = ? and locale = 'de' and tenant_id = 'tenant-a'")) { statement =>
+              "where page_id = ? and locale = 'de' and tenant_id = 'tenant-a'"
+          )) { statement =>
             statement.setObject(1, tenantPageId)
             Using.resource(statement.executeQuery()) { rows =>
               assert(rows.next())
@@ -182,7 +199,7 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
   }
 
   test("quoted Stack tables and legacy translation entities are adopted together") {
-    val target = java.nio.file.Path.of("target").toAbsolutePath
+    val target = Path.of("target").toAbsolutePath
     Files.createDirectories(target)
     Using.resource(EmbeddedPostgres.builder()
       .setDataDirectory(Files.createTempDirectory(target, "i18n-development-stack-adopt-pg-"))
@@ -194,12 +211,14 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
           .applySetting("hibernate.connection.datasource", dataSource)
           .applySetting("hibernate.hbm2ddl.auto", schemaAction)
           .applySetting("hibernate.default_schema", "public")
-          .applySetting("hibernate.physical_naming_strategy",
-            "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy")
+          .applySetting(
+            "hibernate.physical_naming_strategy",
+            "org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy"
+          )
           .applySetting("hibernate.cache.use_second_level_cache", "false")
           .applySetting("hibernate.cache.use_query_cache", "false")
           .build()
-      def metadata(registry: org.hibernate.boot.registry.StandardServiceRegistry) =
+      def metadata(registry: StandardServiceRegistry) =
         new MetadataSources(registry)
           .addAnnotatedClassName(classOf[RuntimeStackOffering].getName)
           .addAnnotatedClassName(classOf[RuntimeStackOfferingTranslation].getName)
@@ -215,10 +234,18 @@ class RuntimeDdlManagerCompatibilitySuite extends munit.FunSuite:
         val desired = HibernateSchemaSource.read(target).toOption.get
         assertEquals(desired.tables.size, 6)
         assert(desired.tables.exists(_.name.name.value == "Schedule#Event_translation"))
-        assertEquals(HibernateSchemaMigration.migrate(target, dataSource,
-          ExecutionOptions(adoptExistingSchema = true)).status, MigrationStatus.Adopted)
-        assertEquals(HibernateSchemaMigration.migrate(target, dataSource).status,
-          MigrationStatus.AlreadyApplied)
+        assertEquals(
+          HibernateSchemaMigration.migrate(
+            target,
+            dataSource,
+            ExecutionOptions(adoptExistingSchema = true)
+          ).status,
+          MigrationStatus.Adopted
+        )
+        assertEquals(
+          HibernateSchemaMigration.migrate(target, dataSource).status,
+          MigrationStatus.AlreadyApplied
+        )
       finally StandardServiceRegistryBuilder.destroy(registry)
     }
   }

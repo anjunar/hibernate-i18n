@@ -3,7 +3,7 @@ package com.anjunar.hibernatei18n.integration
 import org.hibernate.boot.MetadataSources
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
-import java.util.UUID
+import java.util
 import scala.util.Using
 
 /** Verifies the Java/Scala test toolchain and real Hibernate/PostgreSQL lifecycle. */
@@ -22,7 +22,7 @@ class HibernateBootstrapSuite extends TestPostgres:
         assertEquals(binding.getTable.getName, "bootstrap_page")
 
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           factory.inTransaction { session =>
             val page = new BootstrapPage()
             page.id = id

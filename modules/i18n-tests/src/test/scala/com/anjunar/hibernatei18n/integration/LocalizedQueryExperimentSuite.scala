@@ -10,30 +10,35 @@ import org.hibernate.engine.spi.SessionFactoryImplementor
 import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
 /** Exercises ordering and pagination over ordinary translated fields. */
 class LocalizedQueryExperimentSuite extends TestPostgres:
-  private def inLocaleTransaction[A](factory: SessionFactory, locale: String, synchronizer: MapTranslationSynchronizer[LocalizedPage])(body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      synchronizer.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+  private def inLocaleTransaction[A](
+    factory: SessionFactory,
+    locale: String,
+    synchronizer: MapTranslationSynchronizer[LocalizedPage]
+  )(body: Session => A): A =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        synchronizer.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   test("HQL and Criteria sort and page by the active translation with per-field fallback") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -42,16 +47,24 @@ class LocalizedQueryExperimentSuite extends TestPostgres:
       val registry = new StandardServiceRegistryBuilder(bootstrap)
         .applySetting("hibernate.connection.datasource", dataSource)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
-        .applySetting("hibernate.cache.region.factory_class", new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory))
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory)
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "true")
         .applySetting("hibernate.generate_statistics", "true")
         .build()
       try
-        val metadata = new MetadataSources(registry).addAnnotatedClassName(classOf[LocalizedPage].getName).buildMetadata()
+        val metadata =
+          new MetadataSources(registry).addAnnotatedClassName(classOf[LocalizedPage].getName).buildMetadata()
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val synchronizer = new MapTranslationSynchronizer[LocalizedPage](
-            classOf[LocalizedPage], "LocalizedPageTranslation", _.id, _.title, _.content
+            classOf[LocalizedPage],
+            "LocalizedPageTranslation",
+            _.id,
+            _.title,
+            _.content
           )
           val listenerRegistry = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
@@ -62,24 +75,25 @@ class LocalizedQueryExperimentSuite extends TestPostgres:
             inLocaleTransaction(factory, locale, synchronizer)(body)
           inLocale("de") { session =>
             for (slug, german, english) <- List(
-              ("alpha", "Zebra", Some("Apple")),
-              ("beta", "Apfel", Some("Pear")),
-              ("gamma", "Mitte", None),
-              ("delta", "Birne", Some("Banana")),
-              ("epsilon", "Ohne", None)
-            ) do
-              val id = UUID.randomUUID()
+                ("alpha", "Zebra", Some("Apple")),
+                ("beta", "Apfel", Some("Pear")),
+                ("gamma", "Mitte", None),
+                ("delta", "Birne", Some("Banana")),
+                ("epsilon", "Ohne", None)
+              )
+            do
+              val id = util.UUID.randomUUID()
               val page = new LocalizedPage()
               page.id = id
               page.slug = slug
               session.persist(page)
-              val germanRow = new HashMap[String, Object]()
+              val germanRow = new util.HashMap[String, Object]()
               germanRow.put("pageId", id)
               germanRow.put("locale", "de")
               germanRow.put("title", german)
               session.persist("LocalizedPageTranslation", germanRow)
               english.foreach { title =>
-                val englishRow = new HashMap[String, Object]()
+                val englishRow = new util.HashMap[String, Object]()
                 englishRow.put("pageId", id)
                 englishRow.put("locale", "en")
                 englishRow.put("title", title)
@@ -111,8 +125,9 @@ class LocalizedQueryExperimentSuite extends TestPostgres:
           assertEquals(criteriaPage("de"), List("beta", "delta"))
           assertEquals(criteriaPage("en"), List("alpha", "delta"))
           inLocale("en") { session =>
-            val secondPage = session.createQuery("from LocalizedPage p order by p.title, p.slug", classOf[LocalizedPage])
-              .setFirstResult(2).setMaxResults(2).getResultList.asScala.map(_.slug).toList
+            val secondPage =
+              session.createQuery("from LocalizedPage p order by p.title, p.slug", classOf[LocalizedPage])
+                .setFirstResult(2).setMaxResults(2).getResultList.asScala.map(_.slug).toList
             assertEquals(secondPage, List("gamma", "epsilon"))
             val fallback = session.createQuery("from LocalizedPage p where p.title = :title", classOf[LocalizedPage])
               .setParameter("title", "Mitte").getResultList.asScala.map(_.slug).toList

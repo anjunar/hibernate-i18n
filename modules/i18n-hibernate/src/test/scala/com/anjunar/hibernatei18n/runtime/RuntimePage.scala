@@ -9,7 +9,7 @@ import org.hibernate.StaleObjectStateException
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder
 
 import java.nio.file.Files
-import java.util.UUID
+import java.util
 import scala.compiletime.uninitialized
 import scala.util.Using
 
@@ -17,6 +17,6 @@ import scala.util.Using
 @Localized(defaultLocale = "de", fallbackLocale = "en")
 @Table(name = "development_page")
 class RuntimePage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @Translation var title: String = uninitialized
   @Translation @Convert(converter = classOf[RuntimeMarkdownConverter]) var content: RuntimeMarkdown = uninitialized

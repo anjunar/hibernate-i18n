@@ -13,7 +13,7 @@ import org.hibernate.boot.spi.AdditionalMappingContributor
 import org.hibernate.mapping.{Column as MappingColumn, Formula}
 import org.hibernate.engine.jdbc.env.spi.JdbcEnvironment
 
-import java.util.{HashMap, Locale, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
@@ -31,30 +31,31 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
   private final class QuotedNamingStrategy extends PhysicalNamingStrategySnakeCaseImpl:
     override def toPhysicalTableName(name: Identifier, environment: JdbcEnvironment): Identifier =
       val physical = super.toPhysicalTableName(name, environment)
-      if physical == null then null else new Identifier(physical.getText.toUpperCase(Locale.ROOT), true)
+      if physical == null then null else new Identifier(physical.getText.toUpperCase(util.Locale.ROOT), true)
 
     override def toPhysicalColumnName(name: Identifier, environment: JdbcEnvironment): Identifier =
       val physical = super.toPhysicalColumnName(name, environment)
-      if physical == null then null else new Identifier(physical.getText.toUpperCase(Locale.ROOT), true)
+      if physical == null then null else new Identifier(physical.getText.toUpperCase(util.Locale.ROOT), true)
 
   private def inLocale[A](factory: SessionFactory, locale: String)(body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      SessionContentLocale.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        SessionContentLocale.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   private def checkNaming(strategy: PhysicalNamingStrategy, prefix: String, quoted: Boolean = false): Unit =
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -64,7 +65,10 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
         .applySetting("hibernate.connection.datasource", dataSource)
         .applySetting("hibernate.hbm2ddl.auto", "create-drop")
         .applySetting("hibernate.physical_naming_strategy", strategy)
-        .applySetting("hibernate.cache.region.factory_class", new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory))
+        .applySetting(
+          "hibernate.cache.region.factory_class",
+          new LocaleAwareRegionFactory(new InMemoryCacheRegionFactory)
+        )
         .applySetting("hibernate.cache.use_second_level_cache", "true")
         .applySetting("hibernate.cache.use_query_cache", "true")
         .applySetting("hibernate.generate_statistics", "true")
@@ -74,7 +78,7 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
           .addAnnotatedClassName(classOf[NamingLocalizedPage].getName).buildMetadata()
         val parent = metadata.getEntityBinding(classOf[NamingLocalizedPage].getName)
         val translation = metadata.getEntityBinding("NamingLocalizedPageTranslation")
-        def physicalName(name: String): String = if quoted then name.toUpperCase(Locale.ROOT) else name
+        def physicalName(name: String): String = if quoted then name.toUpperCase(util.Locale.ROOT) else name
         def sqlName(name: String): String = if quoted then s"\"${physicalName(name)}\"" else physicalName(name)
         assertEquals(parent.getTable.getName, physicalName(prefix + "naming_page"))
         assertEquals(translation.getTable.getName, physicalName(prefix + "naming_page_translation"))
@@ -90,13 +94,13 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
         assert(formula.contains(s"t.${sqlName(prefix + "locale")}"))
         assert(formula.contains(s"{alias}.${sqlName(prefix + "document_id")}"))
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val id = UUID.randomUUID()
+          val id = util.UUID.randomUUID()
           inLocale(factory, "de") { session =>
             val page = new NamingLocalizedPage()
             page.id = id
             session.persist(page)
             for (locale, value) <- List(("de", "Hallo"), ("en", "Hello")) do
-              val row = new HashMap[String, Object]()
+              val row = new util.HashMap[String, Object]()
               row.put("pageId", id)
               row.put("locale", locale)
               row.put("displayTitle", value)
@@ -114,16 +118,19 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
           assertEquals(factory.getStatistics.getQueryCachePutCount, 2L)
           assertEquals(factory.getStatistics.getQueryCacheHitCount, 2L)
           inLocale(factory, "en") { session =>
-            val key = new HashMap[String, Object]()
+            val key = new util.HashMap[String, Object]()
             key.put("pageId", id)
             key.put("locale", "en")
             session.find("NamingLocalizedPageTranslation", key)
-              .asInstanceOf[java.util.Map[String, Object]].put("displayTitle", "Updated")
+              .asInstanceOf[util.Map[String, Object]].put("displayTitle", "Updated")
           }
           assertEquals(cachedTitle("en"), "Updated")
           assertEquals(cachedTitle("de"), "Hallo")
           inLocale(factory, "de") { session =>
-            val found = session.createQuery("from NamingLocalizedPage p where p.displayTitle = :title", classOf[NamingLocalizedPage])
+            val found = session.createQuery(
+              "from NamingLocalizedPage p where p.displayTitle = :title",
+              classOf[NamingLocalizedPage]
+            )
               .setParameter("title", "Hallo").getSingleResult
             assertEquals(found.id, id)
           }
@@ -161,7 +168,7 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
   test("physical naming cannot merge translation values with keys, version or each other") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -173,10 +180,11 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
         .build()
       try
         for entity <- Seq(
-          classOf[PhysicalKeyCollisionPage],
-          classOf[PhysicalVersionCollisionPage],
-          classOf[PhysicalDuplicateColumnPage]
-        ) do
+            classOf[PhysicalKeyCollisionPage],
+            classOf[PhysicalVersionCollisionPage],
+            classOf[PhysicalDuplicateColumnPage]
+          )
+        do
           val error = intercept[MappingException] {
             new MetadataSources(registry).addAnnotatedClassName(entity.getName).buildMetadata()
           }
@@ -191,7 +199,7 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
   test("@Translation column names map field and getter values into translation rows only") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -210,9 +218,10 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
           .addAnnotatedClassName(classOf[NamedPropertyLocalizedPage].getName)
           .buildMetadata()
         for (entityClass, translationName) <- Seq(
-          (classOf[NamedColumnLocalizedPage], "NamedColumnLocalizedPageTranslation"),
-          (classOf[NamedPropertyLocalizedPage], "NamedPropertyLocalizedPageTranslation")
-        ) do
+            (classOf[NamedColumnLocalizedPage], "NamedColumnLocalizedPageTranslation"),
+            (classOf[NamedPropertyLocalizedPage], "NamedPropertyLocalizedPageTranslation")
+          )
+        do
           val parent = metadata.getEntityBinding(entityClass.getName)
           val translation = metadata.getEntityBinding(translationName)
           assertEquals(parent.getTable.getColumn(new MappingColumn("display_title")), null)
@@ -221,8 +230,8 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
           assert(translation.getTable.getColumn(new MappingColumn("display_title")) != null)
           assertEquals(translation.getTable.getColumn(new MappingColumn("title")), null)
         Using.resource(metadata.buildSessionFactory()) { factory =>
-          val fieldId = UUID.randomUUID()
-          val getterId = UUID.randomUUID()
+          val fieldId = util.UUID.randomUUID()
+          val getterId = util.UUID.randomUUID()
           inLocale(factory, "de") { session =>
             val fieldPage = new NamedColumnLocalizedPage()
             fieldPage.id = fieldId
@@ -231,10 +240,11 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
             getterPage.setId(getterId)
             session.persist(getterPage)
             for (id, translationName, title) <- Seq(
-              (fieldId, "NamedColumnLocalizedPageTranslation", "Feld"),
-              (getterId, "NamedPropertyLocalizedPageTranslation", "Getter")
-            ) do
-              val row = new HashMap[String, Object]()
+                (fieldId, "NamedColumnLocalizedPageTranslation", "Feld"),
+                (getterId, "NamedPropertyLocalizedPageTranslation", "Getter")
+              )
+            do
+              val row = new util.HashMap[String, Object]()
               row.put("pageId", id)
               row.put("locale", "de")
               row.put("title", title)
@@ -245,12 +255,20 @@ class PhysicalNamingExperimentSuite extends TestPostgres:
             val getterPage = session.find(classOf[NamedPropertyLocalizedPage], getterId)
             assertEquals(fieldPage.title, "Feld")
             assertEquals(getterPage.getTitle, "Getter")
-            assertEquals(session.createQuery(
-              "from NamedColumnLocalizedPage p where p.title = :title", classOf[NamedColumnLocalizedPage]
-            ).setParameter("title", "Feld").getSingleResult, fieldPage)
-            assertEquals(session.createQuery(
-              "from NamedPropertyLocalizedPage p where p.title = :title", classOf[NamedPropertyLocalizedPage]
-            ).setParameter("title", "Getter").getSingleResult, getterPage)
+            assertEquals(
+              session.createQuery(
+                "from NamedColumnLocalizedPage p where p.title = :title",
+                classOf[NamedColumnLocalizedPage]
+              ).setParameter("title", "Feld").getSingleResult,
+              fieldPage
+            )
+            assertEquals(
+              session.createQuery(
+                "from NamedPropertyLocalizedPage p where p.title = :title",
+                classOf[NamedPropertyLocalizedPage]
+              ).setParameter("title", "Getter").getSingleResult,
+              getterPage
+            )
           }
         }
       finally StandardServiceRegistryBuilder.destroy(registry)

@@ -11,30 +11,35 @@ import org.hibernate.event.service.spi.EventListenerRegistry
 import org.hibernate.event.spi.EventType
 import org.hibernate.mapping.Column
 
-import java.util.{HashMap, UUID}
+import java.util
 import scala.jdk.CollectionConverters.*
 import scala.util.Using
 
 /** Isolates the experimental mapping from the production guard for one bootstrap proof. */
 class AnnotatedBootstrapExperimentSuite extends TestPostgres:
-  private def inLocaleTransaction[A](factory: SessionFactory, locale: String, synchronizer: MapTranslationSynchronizer[LocalizedPage])(body: Session => A): A =
-    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) { session =>
-      synchronizer.bind(session, locale)
-      val transaction = session.beginTransaction()
-      try
-        val result = body(session)
-        transaction.commit()
-        result
-      catch
-        case error: Throwable =>
-          if transaction.isActive then transaction.rollback()
-          throw error
+  private def inLocaleTransaction[A](
+    factory: SessionFactory,
+    locale: String,
+    synchronizer: MapTranslationSynchronizer[LocalizedPage]
+  )(body: Session => A): A =
+    Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector(locale)).openSession()) {
+      session =>
+        synchronizer.bind(session, locale)
+        val transaction = session.beginTransaction()
+        try
+          val result = body(session)
+          transaction.commit()
+          result
+        catch
+          case error: Throwable =>
+            if transaction.isActive then transaction.rollback()
+            throw error
     }
 
   test("early contributor derives formula and classless rows from annotated ordinary fields") {
     withDatabase { dataSource =>
       val classLoading = new ClassLoaderServiceImpl():
-        override def loadJavaServices[S](contract: Class[S]): java.util.Collection[S] =
+        override def loadJavaServices[S](contract: Class[S]): util.Collection[S] =
           val discovered = super.loadJavaServices(contract)
           if contract == classOf[AdditionalMappingContributor] then
             discovered.asScala.filterNot(_.getClass == classOf[LocalizedBootstrapGuard]).toSeq.asJava
@@ -67,7 +72,11 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
         assertEquals(translation.getTable.getForeignKeyCollection.size(), 1)
         Using.resource(metadata.buildSessionFactory()) { factory =>
           val synchronizer = new MapTranslationSynchronizer[LocalizedPage](
-            classOf[LocalizedPage], "LocalizedPageTranslation", _.id, _.title, _.content
+            classOf[LocalizedPage],
+            "LocalizedPageTranslation",
+            _.id,
+            _.title,
+            _.content
           )
           val listenerRegistry = factory.unwrap(classOf[SessionFactoryImplementor]).getServiceRegistry
             .getService(classOf[EventListenerRegistry])
@@ -79,17 +88,19 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
           listenerRegistry.prependListeners(EventType.MERGE, synchronizer)
           listenerRegistry.prependListeners(EventType.REPLICATE, synchronizer)
           listenerRegistry.appendListeners(EventType.POST_LOAD, synchronizer)
-          listenerRegistry.appendListeners(EventType.PRE_DELETE,
-            new TranslationCascadeEvictor[LocalizedPage](classOf[LocalizedPage], "LocalizedPageTranslation", _.id))
-          val id = UUID.randomUUID()
-          val defaultOnlyId = UUID.randomUUID()
+          listenerRegistry.appendListeners(
+            EventType.PRE_DELETE,
+            new TranslationCascadeEvictor[LocalizedPage](classOf[LocalizedPage], "LocalizedPageTranslation", _.id)
+          )
+          val id = util.UUID.randomUUID()
+          val defaultOnlyId = util.UUID.randomUUID()
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = new LocalizedPage()
             page.id = id
             page.slug = "annotated"
             session.persist(page)
             for (locale, title, content) <- List(("de", "Hallo", "**Deutsch**"), ("en", "Hello", "**English**")) do
-              val row = new HashMap[String, Object]()
+              val row = new util.HashMap[String, Object]()
               row.put("pageId", id)
               row.put("locale", locale)
               row.put("title", title)
@@ -99,40 +110,58 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             defaultOnly.id = defaultOnlyId
             defaultOnly.slug = "default-only"
             session.persist(defaultOnly)
-            val defaultRow = new HashMap[String, Object]()
+            val defaultRow = new util.HashMap[String, Object]()
             defaultRow.put("pageId", defaultOnlyId)
             defaultRow.put("locale", "de")
             defaultRow.put("title", "Nur Deutsch")
             defaultRow.put("content", "**Standard**")
             session.persist("LocalizedPageTranslation", defaultRow)
           }
-          assertEquals(scalar(dataSource, s"select row_version from page_translation where page_id = '$id' and locale = 'de'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select row_version from page_translation where page_id = '$id' and locale = 'de'"),
+            "0"
+          )
           inLocaleTransaction(factory, "de-DE", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, Markdown("**Deutsch**"))
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de-DE'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de-DE'"),
+            "0"
+          )
           inLocaleTransaction(factory, "fr", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
             assertEquals(page.title, "Hello")
             assertEquals(page.content, Markdown("**English**"))
-            val queried = session.createQuery("select p from LocalizedPage p where p.title = :title and p.content = :content", classOf[LocalizedPage])
+            val queried = session.createQuery(
+              "select p from LocalizedPage p where p.title = :title and p.content = :content",
+              classOf[LocalizedPage]
+            )
               .setParameter("title", "Hello")
               .setParameter("content", Markdown("**English**"))
               .getSingleResult
             assert(queried eq page)
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"),
+            "0"
+          )
           inLocaleTransaction(factory, "fr", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], defaultOnlyId)
             assertEquals(page.title, "Nur Deutsch")
             assertEquals(page.content, Markdown("**Standard**"))
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$defaultOnlyId' and locale = 'fr'"), "0")
+          assertEquals(
+            scalar(
+              dataSource,
+              s"select count(*) from page_translation where page_id = '$defaultOnlyId' and locale = 'fr'"
+            ),
+            "0"
+          )
           inLocaleTransaction(factory, "fr", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], defaultOnlyId)
             page.title = null
@@ -140,33 +169,44 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             session.refresh(page)
             assertEquals(page.title, "Nur Deutsch")
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$defaultOnlyId' and locale = 'fr'"), "0")
+          assertEquals(
+            scalar(
+              dataSource,
+              s"select count(*) from page_translation where page_id = '$defaultOnlyId' and locale = 'fr'"
+            ),
+            "0"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             intercept[IllegalStateException](synchronizer.bind(session, "en"))
             val page = session.find(classOf[LocalizedPage], id)
             assertEquals(page.title, "Hallo")
             assertEquals(page.content, Markdown("**Deutsch**"))
-            val found = session.createQuery("select p from LocalizedPage p where p.title = :title", classOf[LocalizedPage])
-              .setParameter("title", "Hallo")
-              .getSingleResult
+            val found =
+              session.createQuery("select p from LocalizedPage p where p.title = :title", classOf[LocalizedPage])
+                .setParameter("title", "Hallo")
+                .getSingleResult
             assert(found eq page)
-            val byContent = session.createQuery("select p from LocalizedPage p where p.content = :content", classOf[LocalizedPage])
-              .setParameter("content", Markdown("**Deutsch**"))
-              .getSingleResult
+            val byContent =
+              session.createQuery("select p from LocalizedPage p where p.content = :content", classOf[LocalizedPage])
+                .setParameter("content", Markdown("**Deutsch**"))
+                .getSingleResult
             assert(byContent eq page)
             page.title = "Guten Tag"
             page.content = Markdown("**Aktuell**")
-            val changed = session.createQuery("select p from LocalizedPage p where p.title = :title and p.content = :content", classOf[LocalizedPage])
+            val changed = session.createQuery(
+              "select p from LocalizedPage p where p.title = :title and p.content = :content",
+              classOf[LocalizedPage]
+            )
               .setParameter("title", "Guten Tag")
               .setParameter("content", Markdown("**Aktuell**"))
               .getSingleResult
             assert(changed eq page)
             session.flush()
-            val translationId = new HashMap[String, Object]()
+            val translationId = new util.HashMap[String, Object]()
             translationId.put("pageId", id)
             translationId.put("locale", "de")
             val editorRow = session.find("LocalizedPageTranslation", translationId)
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             editorRow.put("title", "Redaktion")
             session.flush()
             assertEquals(page.title, "Guten Tag")
@@ -177,76 +217,112 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             assertEquals(page.content, Markdown("**English**"))
           }
           assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id'"), "2")
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
-          assertEquals(scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'de'"), "**Aktuell**")
-          val versionBeforeConcurrentWrite = scalar(dataSource, s"select row_version from page_translation where page_id = '$id' and locale = 'de'").toLong
-          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { first =>
-            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { second =>
-              synchronizer.bind(first, "de")
-              synchronizer.bind(second, "de")
-              val firstTransaction = first.beginTransaction()
-              val secondTransaction = second.beginTransaction()
-              try
-                val firstPage = first.find(classOf[LocalizedPage], id)
-                val secondPage = second.find(classOf[LocalizedPage], id)
-                firstPage.title = "Session Eins"
-                secondPage.title = "Session Zwei"
-                firstTransaction.commit()
-                val stale = intercept[RuntimeException](secondTransaction.commit())
-                val causes = Iterator.iterate[Throwable](stale)(_.getCause).takeWhile(_ != null)
-                assert(causes.exists(_.isInstanceOf[StaleObjectStateException]))
-              finally
-                if firstTransaction.isActive then firstTransaction.rollback()
-                if secondTransaction.isActive then secondTransaction.rollback()
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'de'"),
+            "**Aktuell**"
+          )
+          val versionBeforeConcurrentWrite = scalar(
+            dataSource,
+            s"select row_version from page_translation where page_id = '$id' and locale = 'de'"
+          ).toLong
+          Using.resource(
+            factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()
+          ) { first =>
+            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) {
+              second =>
+                synchronizer.bind(first, "de")
+                synchronizer.bind(second, "de")
+                val firstTransaction = first.beginTransaction()
+                val secondTransaction = second.beginTransaction()
+                try
+                  val firstPage = first.find(classOf[LocalizedPage], id)
+                  val secondPage = second.find(classOf[LocalizedPage], id)
+                  firstPage.title = "Session Eins"
+                  secondPage.title = "Session Zwei"
+                  firstTransaction.commit()
+                  val stale = intercept[RuntimeException](secondTransaction.commit())
+                  val causes = Iterator.iterate[Throwable](stale)(_.getCause).takeWhile(_ != null)
+                  assert(causes.exists(_.isInstanceOf[StaleObjectStateException]))
+                finally
+                  if firstTransaction.isActive then firstTransaction.rollback()
+                  if secondTransaction.isActive then secondTransaction.rollback()
             }
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Session Eins")
-          assertEquals(scalar(dataSource, s"select row_version from page_translation where page_id = '$id' and locale = 'de'").toLong, versionBeforeConcurrentWrite + 1)
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Session Eins"
+          )
+          assertEquals(
+            scalar(
+              dataSource,
+              s"select row_version from page_translation where page_id = '$id' and locale = 'de'"
+            ).toLong,
+            versionBeforeConcurrentWrite + 1
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id).title = "Redaktion"
           }
-          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { first =>
-            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { second =>
-              synchronizer.bind(first, "de")
-              synchronizer.bind(second, "de")
-              val firstTransaction = first.beginTransaction()
-              val secondTransaction = second.beginTransaction()
-              try
-                val refreshedPage = first.find(classOf[LocalizedPage], id)
-                first.refresh(refreshedPage)
-                second.find(classOf[LocalizedPage], id).title = "Nach Refresh fremd"
-                secondTransaction.commit()
-                refreshedPage.title = "Nach Refresh veraltet"
-                val stale = intercept[RuntimeException](firstTransaction.commit())
-                val causes = Iterator.iterate[Throwable](stale)(_.getCause).takeWhile(_ != null)
-                assert(causes.exists(_.isInstanceOf[StaleObjectStateException]))
-              finally
-                if firstTransaction.isActive then firstTransaction.rollback()
-                if secondTransaction.isActive then secondTransaction.rollback()
+          Using.resource(
+            factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()
+          ) { first =>
+            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) {
+              second =>
+                synchronizer.bind(first, "de")
+                synchronizer.bind(second, "de")
+                val firstTransaction = first.beginTransaction()
+                val secondTransaction = second.beginTransaction()
+                try
+                  val refreshedPage = first.find(classOf[LocalizedPage], id)
+                  first.refresh(refreshedPage)
+                  second.find(classOf[LocalizedPage], id).title = "Nach Refresh fremd"
+                  secondTransaction.commit()
+                  refreshedPage.title = "Nach Refresh veraltet"
+                  val stale = intercept[RuntimeException](firstTransaction.commit())
+                  val causes = Iterator.iterate[Throwable](stale)(_.getCause).takeWhile(_ != null)
+                  assert(causes.exists(_.isInstanceOf[StaleObjectStateException]))
+                finally
+                  if firstTransaction.isActive then firstTransaction.rollback()
+                  if secondTransaction.isActive then secondTransaction.rollback()
             }
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Nach Refresh fremd")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Nach Refresh fremd"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id).title = "Redaktion"
           }
-          Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()) { german =>
-            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("en")).openSession()) { english =>
-              synchronizer.bind(german, "de")
-              synchronizer.bind(english, "en")
-              val germanTransaction = german.beginTransaction()
-              val englishTransaction = english.beginTransaction()
-              try
-                german.find(classOf[LocalizedPage], id).title = "Deutsch parallel"
-                english.find(classOf[LocalizedPage], id).title = "English parallel"
-                germanTransaction.commit()
-                englishTransaction.commit()
-              finally
-                if germanTransaction.isActive then germanTransaction.rollback()
-                if englishTransaction.isActive then englishTransaction.rollback()
+          Using.resource(
+            factory.withOptions().statementInspector(new FixedLocaleSqlInspector("de")).openSession()
+          ) { german =>
+            Using.resource(factory.withOptions().statementInspector(new FixedLocaleSqlInspector("en")).openSession()) {
+              english =>
+                synchronizer.bind(german, "de")
+                synchronizer.bind(english, "en")
+                val germanTransaction = german.beginTransaction()
+                val englishTransaction = english.beginTransaction()
+                try
+                  german.find(classOf[LocalizedPage], id).title = "Deutsch parallel"
+                  english.find(classOf[LocalizedPage], id).title = "English parallel"
+                  germanTransaction.commit()
+                  englishTransaction.commit()
+                finally
+                  if germanTransaction.isActive then germanTransaction.rollback()
+                  if englishTransaction.isActive then englishTransaction.rollback()
             }
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Deutsch parallel")
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"), "English parallel")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Deutsch parallel"
+          )
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"),
+            "English parallel"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id).title = "Redaktion"
           }
@@ -256,33 +332,42 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
           val fieldConflict = intercept[HibernateException] {
             inLocaleTransaction(factory, "de", synchronizer) { session =>
               val page = session.find(classOf[LocalizedPage], id)
-              val translationId = new HashMap[String, Object]()
+              val translationId = new util.HashMap[String, Object]()
               translationId.put("pageId", id)
               translationId.put("locale", "de")
               val row = session.find("LocalizedPageTranslation", translationId)
-                .asInstanceOf[java.util.Map[String, Object]]
+                .asInstanceOf[util.Map[String, Object]]
               page.title = "Domain-Titel"
               row.put("title", "Editor-Titel")
               session.flush()
             }
           }
           assert(fieldConflict.getMessage.contains("Conflicting translation edit"))
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           intercept[IllegalStateException] {
             inLocaleTransaction(factory, "de", synchronizer) { session =>
               val page = session.find(classOf[LocalizedPage], id)
-              val translationId = new HashMap[String, Object]()
+              val translationId = new util.HashMap[String, Object]()
               translationId.put("pageId", id)
               translationId.put("locale", "de")
               val row = session.find("LocalizedPageTranslation", translationId)
-                .asInstanceOf[java.util.Map[String, Object]]
+                .asInstanceOf[util.Map[String, Object]]
               page.title = "Domain-Titel"
               row.put("content", "**Editor-Content**")
               session.flush()
-              val title = session.createNativeQuery("select title from page_translation where page_id = :id and locale = 'de'", classOf[String])
+              val title = session.createNativeQuery(
+                "select title from page_translation where page_id = :id and locale = 'de'",
+                classOf[String]
+              )
                 .setParameter("id", id)
                 .getSingleResult
-              val content = session.createNativeQuery("select content from page_translation where page_id = :id and locale = 'de'", classOf[String])
+              val content = session.createNativeQuery(
+                "select content from page_translation where page_id = :id and locale = 'de'",
+                classOf[String]
+              )
                 .setParameter("id", id)
                 .getSingleResult
               assertEquals(title, "Domain-Titel")
@@ -298,7 +383,9 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
               val page = session.find(classOf[LocalizedPage], id)
               page.title = "Vorher"
               session.flush()
-              session.createNativeMutationQuery("update page_translation set title = :title, content = :content where page_id = :id and locale = 'de'")
+              session.createNativeMutationQuery(
+                "update page_translation set title = :title, content = :content where page_id = :id and locale = 'de'"
+              )
                 .setParameter("title", "Redaktion")
                 .setParameter("content", "**Extern**")
                 .setParameter("id", id)
@@ -311,7 +398,10 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
               assertEquals(factory.getStatistics.getEntityUpdateCount, updatesBefore)
               page.title = "Nachher"
               session.flush()
-              val content = session.createNativeQuery("select content from page_translation where page_id = :id and locale = 'de'", classOf[String])
+              val content = session.createNativeQuery(
+                "select content from page_translation where page_id = :id and locale = 'de'",
+                classOf[String]
+              )
                 .setParameter("id", id)
                 .getSingleResult
               assertEquals(content, "**Extern**")
@@ -321,17 +411,20 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
           val dirtyRefresh = intercept[HibernateException] {
             inLocaleTransaction(factory, "de", synchronizer) { session =>
               val page = session.find(classOf[LocalizedPage], id)
-              val translationId = new HashMap[String, Object]()
+              val translationId = new util.HashMap[String, Object]()
               translationId.put("pageId", id)
               translationId.put("locale", "de")
               val row = session.find("LocalizedPageTranslation", translationId)
-                .asInstanceOf[java.util.Map[String, Object]]
+                .asInstanceOf[util.Map[String, Object]]
               row.put("content", "**Unsent**")
               session.refresh(page)
             }
           }
           assert(dirtyRefresh.getMessage.contains("modified translation row"))
-          assertEquals(scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'de'"), "**Aktuell**")
+          assertEquals(
+            scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'de'"),
+            "**Aktuell**"
+          )
           val detached = inLocaleTransaction(factory, "de", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id)
           }
@@ -342,7 +435,10 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             }
           }
           assert(detachedMerge.getMessage.contains("Cannot merge an unmanaged localized entity"))
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val managed = session.find(classOf[LocalizedPage], id)
             assert(session.merge(managed) eq managed)
@@ -353,14 +449,20 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             }
           }
           assert(crossLocaleMerge.getMessage.contains("Cannot merge an unmanaged localized entity"))
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"), "Hello")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"),
+            "Hello"
+          )
           val crossLocaleReplication = intercept[HibernateException] {
             inLocaleTransaction(factory, "en", synchronizer) { session =>
               session.replicate(detached, ReplicationMode.OVERWRITE)
             }
           }
           assert(crossLocaleReplication.getMessage.contains("Cannot replicate a localized entity"))
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"), "Hello")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'en'"),
+            "Hello"
+          )
           val unknownOrigin = new LocalizedPage()
           unknownOrigin.id = id
           unknownOrigin.slug = "unknown-origin"
@@ -369,7 +471,10 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             inLocaleTransaction(factory, "de", synchronizer)(_.merge(unknownOrigin))
           }
           assert(unknownMerge.getMessage.contains("Cannot merge an unmanaged localized entity"))
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           val staleFrench = inLocaleTransaction(factory, "fr", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id)
           }
@@ -377,7 +482,9 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
           // Without the merge guard, the obsolete inherited English content becomes an explicit French value.
           val staleFallbackMerge = intercept[HibernateException] {
             inLocaleTransaction(factory, "fr", synchronizer) { session =>
-              session.createNativeMutationQuery("update page_translation set content = :content where page_id = :id and locale = 'en'")
+              session.createNativeMutationQuery(
+                "update page_translation set content = :content where page_id = :id and locale = 'en'"
+              )
                 .setParameter("content", "**Newer English**")
                 .setParameter("id", id)
                 .executeUpdate()
@@ -385,19 +492,29 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             }
           }
           assert(staleFallbackMerge.getMessage.contains("Cannot merge an unmanaged localized entity"))
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"),
+            "0"
+          )
           inLocaleTransaction(factory, "fr", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
             assertEquals(page.title, "Hello")
             assertEquals(page.content, Markdown("**English**"))
             page.title = "Bonjour"
-            val found = session.createQuery("select p from LocalizedPage p where p.title = :title", classOf[LocalizedPage])
-              .setParameter("title", "Bonjour")
-              .getSingleResult
+            val found =
+              session.createQuery("select p from LocalizedPage p where p.title = :title", classOf[LocalizedPage])
+                .setParameter("title", "Bonjour")
+                .getSingleResult
             assert(found eq page)
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'fr'"), "Bonjour")
-          assertEquals(scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'fr'"), null)
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'fr'"),
+            "Bonjour"
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'fr'"),
+            null
+          )
           inLocaleTransaction(factory, "en", synchronizer) { session =>
             session.find(classOf[LocalizedPage], id).content = Markdown("**English updated**")
           }
@@ -415,7 +532,10 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             assertEquals(page.content, Markdown("**English updated**"))
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'fr'"),
+            "0"
+          )
           inLocaleTransaction(factory, "fr", synchronizer) { session =>
             assertEquals(session.find(classOf[LocalizedPage], id).title, "Hello")
           }
@@ -433,9 +553,15 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             assertEquals(page.title, "Hello")
             assertEquals(page.content, Markdown("**Français**"))
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'fr'"), null)
-          assertEquals(scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'fr'"), "**Français**")
-          val insertedId = UUID.randomUUID()
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'fr'"),
+            null
+          )
+          assertEquals(
+            scalar(dataSource, s"select content from page_translation where page_id = '$id' and locale = 'fr'"),
+            "**Français**"
+          )
+          val insertedId = util.UUID.randomUUID()
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = new LocalizedPage()
             page.id = insertedId
@@ -443,16 +569,21 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             page.title = "Neu"
             session.persist(page)
             val first = session.createQuery(
-              "select p from LocalizedPage p where p.id = :id and p.title = :title", classOf[LocalizedPage]
+              "select p from LocalizedPage p where p.id = :id and p.title = :title",
+              classOf[LocalizedPage]
             ).setParameter("id", insertedId).setParameter("title", "Neu").getSingleResult
             assert(first eq page)
             page.title = "Erneut neu"
             val second = session.createQuery(
-              "select p from LocalizedPage p where p.id = :id and p.title = :title", classOf[LocalizedPage]
+              "select p from LocalizedPage p where p.id = :id and p.title = :title",
+              classOf[LocalizedPage]
             ).setParameter("id", insertedId).setParameter("title", "Erneut neu").getSingleResult
             assert(second eq page)
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$insertedId' and locale = 'de'"), "Erneut neu")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$insertedId' and locale = 'de'"),
+            "Erneut neu"
+          )
           intercept[IllegalStateException] {
             inLocaleTransaction(factory, "de", synchronizer) { session =>
               session.find(classOf[LocalizedPage], id).title = "Zurückgerollt"
@@ -460,22 +591,29 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
               throw new IllegalStateException("rollback probe")
             }
           }
-          assertEquals(scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"), "Redaktion")
+          assertEquals(
+            scalar(dataSource, s"select title from page_translation where page_id = '$id' and locale = 'de'"),
+            "Redaktion"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
             page.title = "Vor Clear"
             session.flush()
             session.clear()
             page.title = "Detached nach Clear"
-            val deleted = session.createNativeMutationQuery("delete from page_translation where page_id = :id and locale = 'de'")
-              .setParameter("id", id)
-              .executeUpdate()
+            val deleted =
+              session.createNativeMutationQuery("delete from page_translation where page_id = :id and locale = 'de'")
+                .setParameter("id", id)
+                .executeUpdate()
             assertEquals(deleted, 1)
             session.load(page, id)
             assertEquals(page.title, "Hello")
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de'"),
+            "0"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
             page.title = "Vor Evict"
@@ -483,32 +621,37 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             page.title = "Noch vor Evict"
             session.flush()
             val activeTitle = session.createNativeQuery(
-              "select title from page_translation where page_id = :id and locale = 'de'", classOf[String]
+              "select title from page_translation where page_id = :id and locale = 'de'",
+              classOf[String]
             ).setParameter("id", id).getSingleResult
             assertEquals(activeTitle, "Noch vor Evict")
             session.evict(page)
             page.title = "Detached nach Evict"
-            val deleted = session.createNativeMutationQuery("delete from page_translation where page_id = :id and locale = 'de'")
-              .setParameter("id", id)
-              .executeUpdate()
+            val deleted =
+              session.createNativeMutationQuery("delete from page_translation where page_id = :id and locale = 'de'")
+                .setParameter("id", id)
+                .executeUpdate()
             assertEquals(deleted, 1)
             session.load(page, id)
             assertEquals(page.title, "Hello")
             session.flush()
           }
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$id' and locale = 'de'"),
+            "0"
+          )
           inLocaleTransaction(factory, "de", synchronizer) { session =>
             val page = session.find(classOf[LocalizedPage], id)
-            val englishId = new HashMap[String, Object]()
+            val englishId = new util.HashMap[String, Object]()
             englishId.put("pageId", id)
             englishId.put("locale", "en")
             val english = session.find("LocalizedPageTranslation", englishId)
-              .asInstanceOf[java.util.Map[String, Object]]
+              .asInstanceOf[util.Map[String, Object]]
             english.put("title", "Soon deleted")
             session.remove(page)
             session.remove(session.find(classOf[LocalizedPage], defaultOnlyId))
             session.flush()
-            val germanId = new HashMap[String, Object]()
+            val germanId = new util.HashMap[String, Object]()
             germanId.put("pageId", id)
             germanId.put("locale", "de")
             assert(session.find("LocalizedPageTranslation", germanId) == null)
@@ -517,7 +660,10 @@ class AnnotatedBootstrapExperimentSuite extends TestPostgres:
             assert(session.find("LocalizedPageTranslation", germanId) == null)
           }
           assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$id'"), "0")
-          assertEquals(scalar(dataSource, s"select count(*) from page_translation where page_id = '$defaultOnlyId'"), "0")
+          assertEquals(
+            scalar(dataSource, s"select count(*) from page_translation where page_id = '$defaultOnlyId'"),
+            "0"
+          )
         }
       finally StandardServiceRegistryBuilder.destroy(registry)
     }

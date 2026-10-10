@@ -6,14 +6,13 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 @Entity
 @Localized(defaultLocale = "de")
 @Table(name = "physical_duplicate_column_page")
 class PhysicalDuplicateColumnPage:
-  @Id var id: UUID = uninitialized
+  @Id var id: util.UUID = uninitialized
   @Translation(column = "displayTitle") var title: String = uninitialized
   @Translation(column = "display_title") var subtitle: String = uninitialized

@@ -6,18 +6,17 @@ import org.hibernate.annotations.{OnDelete, OnDeleteAction, TenantId}
 import org.hibernate.annotations.Cache
 import org.hibernate.annotations.CacheConcurrencyStrategy
 
-import java.util.UUID
-import java.util.Objects
+import java.util
 import scala.compiletime.uninitialized
 
 /** Separate persistent identity for one page and one content locale. */
 @Embeddable
 class FormulaTranslationId extends Serializable:
-  @Column(name = "page_id") var pageId: UUID = uninitialized
+  @Column(name = "page_id") var pageId: util.UUID = uninitialized
   var locale: String = uninitialized
 
   override def equals(other: Any): Boolean = other match
     case that: FormulaTranslationId => pageId == that.pageId && locale == that.locale
-    case _ => false
+    case _                          => false
 
-  override def hashCode(): Int = Objects.hash(pageId, locale)
+  override def hashCode(): Int = util.Objects.hash(pageId, locale)

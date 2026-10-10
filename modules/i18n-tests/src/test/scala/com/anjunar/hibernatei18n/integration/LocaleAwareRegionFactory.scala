@@ -8,10 +8,11 @@ import org.hibernate.cache.cfg.spi.{DomainDataRegionBuildingContext, DomainDataR
 import org.hibernate.cache.spi.{CacheTransactionSynchronization, DomainDataRegion, QueryResultsRegion, RegionFactory, TimestampsRegion}
 import org.hibernate.cache.spi.access.AccessType
 import org.hibernate.engine.spi.{SessionFactoryImplementor, SharedSessionContractImplementor}
+import java.util
 
 /** Test-only decorator: preserves the provider's regions, but scopes query results by locale. */
 final class LocaleAwareRegionFactory(delegate: RegionFactory) extends RegionFactory:
-  override def start(settings: SessionFactoryOptions, configValues: java.util.Map[String, Object]): Unit =
+  override def start(settings: SessionFactoryOptions, configValues: util.Map[String, Object]): Unit =
     delegate.start(settings, configValues)
 
   override def stop(): Unit = delegate.stop()
@@ -30,18 +31,18 @@ final class LocaleAwareRegionFactory(delegate: RegionFactory) extends RegionFact
   override def getTimeout(): Long = delegate.getTimeout()
 
   override def buildDomainDataRegion(
-      regionConfig: DomainDataRegionConfig,
-      buildingContext: DomainDataRegionBuildingContext
+    regionConfig: DomainDataRegionConfig,
+    buildingContext: DomainDataRegionBuildingContext
   ): DomainDataRegion = delegate.buildDomainDataRegion(regionConfig, buildingContext)
 
   override def buildTimestampsRegion(
-      regionName: String,
-      sessionFactory: SessionFactoryImplementor
+    regionName: String,
+    sessionFactory: SessionFactoryImplementor
   ): TimestampsRegion = delegate.buildTimestampsRegion(regionName, sessionFactory)
 
   override def buildQueryResultsRegion(
-      regionName: String,
-      sessionFactory: SessionFactoryImplementor
+    regionName: String,
+    sessionFactory: SessionFactoryImplementor
   ): QueryResultsRegion =
     val region = delegate.buildQueryResultsRegion(regionName, sessionFactory)
     new QueryResultsRegion:
@@ -61,4 +62,3 @@ final class LocaleAwareRegionFactory(delegate: RegionFactory) extends RegionFact
 
       override def putIntoCache(key: Object, value: Object, session: SharedSessionContractImplementor): Unit =
         region.putIntoCache(scoped(key, session), value, session)
-

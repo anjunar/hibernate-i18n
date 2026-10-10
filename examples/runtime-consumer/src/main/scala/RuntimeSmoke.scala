@@ -15,7 +15,7 @@ object RuntimeSmoke:
       .setServerConfig("listen_addresses", "127.0.0.1")
       .setPort(0).start()) { postgres =>
       RuntimeConsumer.withFactory(postgres.getPostgresDatabase, schemaMode = "create-drop") {
-        (factory, translations, titleField) =>
+        (factory, translations) =>
           val id = UUID.randomUUID()
           Using.resource(HibernateI18n.openSession(factory, "de")) { session =>
             val transaction = session.beginTransaction()
@@ -31,10 +31,10 @@ object RuntimeSmoke:
                 throw error
           }
           RuntimeConsumer.setEnglishTitleInGermanSession(
-            factory, translations, titleField, id, "Hello")
+            factory, translations, id, "Hello")
           val german = RuntimeConsumer.germanTitle(factory, id)
           val editor = RuntimeConsumer.englishTitleInGermanSession(
-            factory, translations, titleField, id)
+            factory, translations, id)
           val english = Using.resource(HibernateI18n.openSession(factory, "en")) { session =>
             session.find(classOf[ExamplePage], id).title
           }

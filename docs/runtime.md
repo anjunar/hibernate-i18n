@@ -1,10 +1,11 @@
-# Hibernate I18n 1.1.0 development runtime
+# Hibernate I18n 1.1.0 runtime
 
-The development coordinate is `com.anjunar:hibernate-i18n:1.1.0-SNAPSHOT`, without a Scala
+The coordinate is `com.anjunar:hibernate-i18n:1.1.0`, without a Scala
 suffix. Use the same runtime for application and production bootstrap; a separate
 Development artifact is no longer needed. The supported ORM version is
 Hibernate 7.4.10.Final, with PostgreSQL and JDK 17 or newer.
-The automatic registration API described here is not available in the published 1.0.0 release.
+Declare translations only with `@Localized`, `@Translation` and the standard JPA annotations.
+There is no second list of fields, ID readers, property accessors or conversion functions to maintain.
 
 ## Metadata and schema startup
 
@@ -23,7 +24,6 @@ generated rows' schema IDs and brings schema-integration 1.2.0 transitively.
 `HibernateI18n.openSession` registers every mapped `@Localized` entity before opening
 the first localized Session. Identifiers, field/getter access and conversion functions
 come from the finalized Hibernate mapping. Applications maintain only the annotations.
-An application that wants eager initialization can call `HibernateI18n.install(factory)`.
 
 Exact-locale editors obtain their handle without listing fields:
 
@@ -31,11 +31,10 @@ Exact-locale editors obtain their handle without listing fields:
 import com.anjunar.hibernatei18n.runtime.HibernateI18n
 
 val translations = HibernateI18n.translations(factory, classOf[Page])
-val titleField = translations.field[String]("title")
 ```
 
 `fieldNames` exposes the annotation-derived inventory for generic editors and seeds.
-`field[V](name)` checks the requested domain type and rejects untranslated properties.
+Named access checks domain types and rejects untranslated properties.
 Registration and handle lookup are idempotent. One factory listener dispatches each
 flush to its entity bridges, and closing the factory removes its runtime registration.
 Generic forms and multilingual seeds can use `setActive(session, entity, name, value)`
@@ -43,11 +42,6 @@ to change an annotated domain property through Hibernate's configured setter. Th
 needs no parallel list of setter functions. Ordinary domain code still assigns its
 typed property directly. `setActive` uses the same managed-entity and field-type checks
 as the editor; the resulting domain change is synchronized during normal flush.
-
-The 1.0.0 `install(factory, entityClass, idOf, fields)` API remains available for
-compatibility. Explicit registrations must still match every annotated field and
-are checked for miswired readers at flush. Do not combine explicit and automatic
-registration of the same entity; use the returned or automatically obtained handle.
 
 Close the SessionFactory and destroy its StandardServiceRegistry during shutdown.
 A plain Hibernate registry without the I18n bootstrap rejects annotation mappings
@@ -60,10 +54,9 @@ database value. The runtime uses Hibernate's configured JPA converter instance i
 both directions:
 
 ```scala
-@Translation @Convert(converter = classOf[MarkdownConverter])
+@Translation
+@Convert(converter = classOf[MarkdownConverter])
 var content: Markdown = uninitialized
-
-val contentField = translations.field[Markdown]("content")
 ```
 
 No separate codec or reader is needed. Nulls are handled before conversion. `@Translation(column = ...)`
@@ -99,8 +92,8 @@ mode. Use transactions, roll back errors and always close Sessions.
 
 ## Exact-locale editor
 
-The handle's `get` and `set` use a managed entity from that factory and a field
-obtained from that handle. Named access resolves the same annotation-derived field:
+The handle's `get` and `set` use a managed entity from that factory and the name of
+an annotated property. No additional field definition is needed:
 
 ```scala
 val english: Option[Markdown] =
@@ -147,7 +140,7 @@ domain state in another locale.
 ## Existing databases
 
 The generated table, column names and stable schema IDs stay compatible with the
-previous snapshot mapping. Legacy explicit translation entities remain separate;
+1.0.0 mapping. Legacy explicit translation entities remain separate;
 the runtime does not automatically copy their rows into generated tables.
 
 Generated String columns use PostgreSQL `text`. For older generated varchar

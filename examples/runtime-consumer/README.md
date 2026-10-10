@@ -1,9 +1,9 @@
 # Independent Hibernate I18n consumer
 
-This sbt build consumes `com.anjunar:hibernate-i18n:1.1.0-SNAPSHOT` as an ordinary
+This sbt build consumes `com.anjunar:hibernate-i18n:1.1.0` as an ordinary
 dependency. It does not use `ProjectRef` or sources from the library build.
 
-After this development version is published to a configured snapshot repository, run from this directory:
+Run from this directory after the release is available on Maven Central or installed locally:
 
 ```shell
 sbt --server "runMain RuntimeSmoke"

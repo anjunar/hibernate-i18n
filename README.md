@@ -6,15 +6,16 @@ Session.
 
 | Version | Platform | Scala | Hibernate | License |
 | --- | --- | --- | --- | --- |
-| 1.1.0-SNAPSHOT | JVM / Java 17+ | 3.9 | 7.4.10.Final | MIT |
+| 1.1.0 | JVM / Java 17+ | 3.9 | 7.4.10.Final | MIT |
 
 Documentation: [English](https://docs.anjunar.com/en/hibernate-i18n) · [Deutsch](https://docs.anjunar.com/de/hibernate-i18n)
 Website: [English](https://anjunar.com/en/hibernate-i18n) · [Deutsch](https://anjunar.com/de/hibernate-i18n)
 
 ## Installation
 
-The annotation-driven bootstrap below is new in the unreleased 1.1.0 development version.
-The published 1.0.0 API still requires explicit field bridges.
+Declare translations only through `@Localized`, `@Translation` and standard JPA annotations.
+The runtime discovers the entity ID, translated properties, property access and converters from Hibernate
+metadata. No field lists, reader/writer functions or separate codecs need to be registered.
 
 One runtime artifact, without a Scala suffix. It brings `hibernate-i18n-core`, Hibernate ORM 7.4.10.Final and
 [Hibernate DDL Manager](https://github.com/anjunar/hibernate-ddl-manager) `schema-integration` 1.2.0 transitively.
@@ -22,14 +23,14 @@ The application provides a PostgreSQL DataSource and JDBC driver. The runtime is
 or newer; the public `@Localized` and `@Translation` annotations are Java.
 
 ```scala
-libraryDependencies += "com.anjunar" % "hibernate-i18n" % "1.1.0-SNAPSHOT"
+libraryDependencies += "com.anjunar" % "hibernate-i18n" % "1.1.0"
 ```
 
 ```xml
 <dependency>
   <groupId>com.anjunar</groupId>
   <artifactId>hibernate-i18n</artifactId>
-  <version>1.1.0-SNAPSHOT</version>
+  <version>1.1.0</version>
 </dependency>
 ```
 
@@ -52,8 +53,13 @@ import scala.compiletime.uninitialized
 @SchemaId("7f3a9c21")
 @Localized(defaultLocale = "en", fallbackLocale = "en")
 class Page:
-  @Id @SchemaId("0a1b2c3d") var id: UUID = uninitialized
-  @Translation @SchemaId("f34e45b6") var title: String = uninitialized
+  @Id
+  @SchemaId("0a1b2c3d")
+  var id: UUID = uninitialized
+
+  @Translation
+  @SchemaId("f34e45b6")
+  var title: String = uninitialized
 ```
 
 Build the registry through `HibernateI18n` and migrate the complete metadata. Opening the first localized
@@ -76,11 +82,10 @@ val metadata = new MetadataSources(registry)
   .buildMetadata()
 HibernateSchemaMigration.migrate(metadata, dataSource)
 val factory = metadata.buildSessionFactory()
-val translations = HibernateI18n.translations(factory, classOf[Page]) // Only needed for exact-locale editing.
 ```
 
-Load an existing page in German, edit its ordinary field and write an exact English override through the typed
-editor. `pageId` identifies that existing page. The English edit leaves its loaded German title intact.
+Load an existing page in German and edit its ordinary field. `pageId` identifies that existing page.
+Opening the Session initializes the annotated mappings automatically.
 
 ```scala
 val session = HibernateI18n.openSession(factory, "de")
@@ -89,9 +94,6 @@ try
   try
     val page = session.find(classOf[Page], pageId)
     page.title = "Hallo"
-    val english: Option[String] =
-      translations.get[String](session, page, "title", "en")
-    translations.set(session, page, "title", "en", "Hello")
     tx.commit()
   catch
     case error: Throwable =>
@@ -100,9 +102,37 @@ try
 finally session.close()
 ```
 
-`get` reads only the exact override, with `None` for a missing value. Ordinary entity fields apply fallback
-separately: exact locale, language, configured fallback, then default locale. `set` accepts inactive locales;
-write the active locale through the entity field. Close the SessionFactory and destroy the registry at shutdown.
+Ordinary entity fields apply fallback separately: exact locale, language, configured fallback, then default
+locale. Close the SessionFactory and destroy the registry at shutdown.
+
+## Converted values
+
+Keep the domain type and declare its String representation with the standard JPA converter annotation:
+
+```scala
+@Translation
+@jakarta.persistence.Convert(converter = classOf[MarkdownConverter])
+var content: Markdown = uninitialized
+```
+
+The runtime reuses Hibernate's configured converter for loading, active-language edits and exact-locale editor
+access. No additional encoder, decoder or field registration is needed.
+
+## Exact-locale editor
+
+When an editor or seed needs to access another language in the same Session, request the annotation-derived
+handle. This is value access, not mapping configuration; the field is already declared by `@Translation`.
+In an active transaction of a German Session:
+
+```scala
+val translations = HibernateI18n.translations(factory, classOf[Page])
+val page = session.find(classOf[Page], pageId)
+val english: Option[String] = translations.get[String](session, page, "title", "en")
+translations.set(session, page, "title", "en", "Hello")
+```
+
+`get` reads only the exact override, with `None` for a missing value. `set` accepts inactive locales and leaves
+the managed entity's German title intact. Write the active language through the ordinary entity property.
 
 ## The principle
 
@@ -142,20 +172,20 @@ Start with the entity mapping and bootstrap, then follow the Session, editor and
 
 ## Limits
 
-The 1.1.0 development version supports Hibernate ORM 7.4.10.Final and PostgreSQL. The mapping and lifecycle constraints are part
+Version 1.1.0 supports Hibernate ORM 7.4.10.Final and PostgreSQL. The mapping and lifecycle constraints are part
 of its runtime contract.
 
 - **Mapping:** one UUID ID, String database values and consistent field or JavaBean getter access. Converted
   values reuse the mapped JPA converter. Translated mapped-superclass members
   may feed one entity mapping per factory; a supported single-table hierarchy inherits its owning entity's bridge.
-- **Bootstrap:** `openSession` automatically registers every mapped localized entity. `install(factory)` can
-  register them eagerly. A plain Hibernate registry rejects translation annotations before schema generation.
+- **Bootstrap:** `openSession` automatically initializes every mapped localized entity from its annotations.
+  A plain Hibernate registry rejects translation annotations before schema generation.
 - **Managed edits:** new entities use `persist`; load existing entities in the target locale before editing.
   Detached `merge` and `replicate`, mixed access and `@Column` on a translated property are rejected.
   Use `@Translation(column = ...)` to name its column.
 - **Overrides:** `null` clears a field's override; clearing the last value removes its locale row. Refresh or a
-  new Session observes fallback changes. Editor operations require a managed entity and resolve the field
-  through the handle's name lookup or its `field[V](name)` accessor.
+  new Session observes fallback changes. Editor operations require a managed entity and resolve the annotated
+  property by name; no field object needs to be defined.
 - **Copies:** `copyInactive(session, source, draft)` copies raw stored rows except the active locale and returns
   their count. Both entities must be managed and have different IDs. Set the draft's active fields first;
   matching target rows are replaced, target locales absent from the source remain, and loaded fields stay intact.
@@ -209,7 +239,7 @@ Run `check` and the independent consumer before signing and publishing.
 ```powershell
 .\scripts\set-version.ps1 -Check
 .\scripts\runtime-smoke.ps1
-.\scripts\publish-central.ps1 -Version 1.0.0
+.\scripts\publish-central.ps1 -Version 1.1.0
 ```
 
 The release scripts sign both artifacts with GPG and upload them to the Central

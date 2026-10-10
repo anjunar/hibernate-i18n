@@ -1,7 +1,7 @@
 import sbt.url
 
 // sbt 2 applies bare settings to every subproject, including the root.
-version := "1.1.0-SNAPSHOT"
+version := "1.1.0"
 organization := "com.anjunar"
 organizationName := "Anjunar"
 organizationHomepage := Some(url("https://github.com/anjunar"))
